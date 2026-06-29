@@ -1,10 +1,8 @@
 {
   "name": "isaac-os",
   "version": "1.0.0",
-  "description": "Isaac OS - Personal Life Dashboard",
   "scripts": {
-    "dev": "vercel dev",
-    "build": "echo 'Static build'"
-  },
-  "dependencies": {}
+    "build": "echo 'ok'",
+    "vercel-build": "echo 'ok'"
+  }
 }
