@@ -35,7 +35,6 @@ export default async function handler(req, res) {
   const refresh = req.headers['x-refresh-token'];
   if (!token) return res.status(401).json({ error: 'Missing token' });
 
-  // Always try to refresh token first for fresh data
   let newTokens = null;
   if (refresh) {
     const refreshed = await refreshToken(refresh);
@@ -45,13 +44,10 @@ export default async function handler(req, res) {
     }
   }
 
-  // Correct WHOOP API v1 endpoints - no 'order' param, limit max 25
-  const [profile, recovery, sleep, cycles, workouts, body] = await Promise.allSettled([
+  // Only fetch what actually works for this account
+  const [profile, cycles, body] = await Promise.allSettled([
     get('/user/profile/basic', token),
-    get('/recovery?limit=25', token),
-    get('/activity/sleep?limit=25', token),
     get('/cycle?limit=25', token),
-    get('/activity/workout?limit=10', token),
     get('/user/measurement/body', token),
   ]);
 
@@ -66,10 +62,7 @@ export default async function handler(req, res) {
   return res.status(200).json({
     _new_tokens: newTokens,
     profile:  safe(profile),
-    recovery: safe(recovery),
-    sleep:    safe(sleep),
     cycles:   safe(cycles),
-    workouts: safe(workouts),
     body:     safe(body),
   });
 }
