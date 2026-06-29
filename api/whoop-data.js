@@ -1,30 +1,49 @@
 const BASE = 'https://api.prod.whoop.com/developer/v1';
 
+async function refreshToken(refresh_token) {
+  const res = await fetch('https://api.prod.whoop.com/oauth/oauth2/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'refresh_token',
+      refresh_token,
+      client_id: process.env.WHOOP_CLIENT_ID,
+      client_secret: process.env.WHOOP_CLIENT_SECRET,
+    }),
+  });
+  if (!res.ok) return null;
+  return res.json();
+}
+
 async function get(path, token) {
   const res = await fetch(`${BASE}${path}`, {
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
+    headers: { 'Authorization': `Bearer ${token}` },
   });
   const text = await res.text();
-  try {
-    return { ok: res.ok, status: res.status, data: JSON.parse(text) };
-  } catch {
-    return { ok: res.ok, status: res.status, data: text };
-  }
+  let data;
+  try { data = JSON.parse(text); } catch { data = text; }
+  return { status: res.status, ok: res.ok, data };
 }
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Authorization, X-Refresh-Token, Content-Type');
   if (req.method === 'OPTIONS') return res.status(200).end();
 
-  const auth = req.headers['authorization'];
-  if (!auth?.startsWith('Bearer ')) {
-    return res.status(401).json({ error: 'Missing token' });
+  let token = req.headers['authorization']?.replace('Bearer ', '');
+  const refresh = req.headers['x-refresh-token'];
+
+  if (!token) return res.status(401).json({ error: 'Missing token' });
+
+  // Try refresh if we have a refresh token
+  let newTokens = null;
+  if (refresh) {
+    const refreshed = await refreshToken(refresh);
+    if (refreshed?.access_token) {
+      token = refreshed.access_token;
+      newTokens = refreshed;
+    }
   }
-  const token = auth.slice(7);
 
   const [profile, recovery, sleep, cycles, workouts, body] = await Promise.allSettled([
     get('/user/profile/basic', token),
@@ -44,6 +63,7 @@ export default async function handler(req, res) {
   };
 
   return res.status(200).json({
+    _new_tokens: newTokens,
     profile:  safe(profile),
     recovery: safe(recovery),
     sleep:    safe(sleep),
