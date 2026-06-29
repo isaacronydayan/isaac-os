@@ -1,0 +1,14 @@
+{
+  "version": 2,
+  "rewrites": [
+    { "source": "/callback", "destination": "/api/callback" },
+    { "source": "/privacy",  "destination": "/api/privacy"  },
+    { "source": "/whoop/login",    "destination": "/api/whoop-login"   },
+    { "source": "/whoop/data",     "destination": "/api/whoop-data"    },
+    { "source": "/whoop/recovery", "destination": "/api/whoop-recovery"},
+    { "source": "/whoop/sleep",    "destination": "/api/whoop-sleep"   },
+    { "source": "/whoop/workouts", "destination": "/api/whoop-workouts"},
+    { "source": "/whoop/profile",  "destination": "/api/whoop-profile" },
+    { "source": "/(.*)",           "destination": "/api/index"         }
+  ]
+}
