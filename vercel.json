@@ -1,13 +1,10 @@
 {
   "version": 2,
-  "builds": [
-    { "src": "api/*.js", "use": "@vercel/node" }
-  ],
   "routes": [
-    { "src": "/callback",    "dest": "/api/callback"    },
-    { "src": "/privacy",     "dest": "/api/privacy"     },
-    { "src": "/whoop/login", "dest": "/api/whoop-login" },
-    { "src": "/whoop/data",  "dest": "/api/whoop-data"  },
-    { "src": "/(.*)",        "dest": "/api/index"       }
+    { "src": "/callback",    "dest": "/api/callback.js"    },
+    { "src": "/privacy",     "dest": "/api/privacy.js"     },
+    { "src": "/whoop/login", "dest": "/api/whoop-login.js" },
+    { "src": "/whoop/data",  "dest": "/api/whoop-data.js"  },
+    { "src": "/(.*)",        "dest": "/api/index.js"       }
   ]
 }
