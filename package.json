@@ -2,7 +2,9 @@
   "name": "isaac-os",
   "version": "1.0.0",
   "scripts": {
-    "build": "echo 'ok'",
-    "vercel-build": "echo 'ok'"
+    "build": "echo ok"
+  },
+  "engines": {
+    "node": "20.x"
   }
 }
