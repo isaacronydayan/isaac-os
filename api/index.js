@@ -252,7 +252,7 @@ function WhoopMetrics({whoop}){
   const body=data.body;
   const profile=data.profile;
 
-  // All available data comes from cycles
+  // Cycle base metrics
   const strain=latest_cycle?.score?.strain??null;
   const avg_hr=latest_cycle?.score?.average_heart_rate??null;
   const max_hr=latest_cycle?.score?.max_heart_rate??null;
@@ -262,22 +262,46 @@ function WhoopMetrics({whoop}){
   const height_m=body?.height_meter??null;
   const max_hr_body=body?.max_heart_rate??null;
 
-  // 30d history from cycles
+  // Recovery data (from /cycle/{id}/recovery endpoint)
+  const cr=data.cycle_recovery;
+  const recovery_score=cr?.score?.recovery_score??null;
+  const hrv=cr?.score?.hrv_rmssd_milli??null;
+  const rhr=cr?.score?.resting_heart_rate??null;
+  const spo2=cr?.score?.spo2_percentage??null;
+  const skin_temp=cr?.score?.skin_temp_celsius??null;
+
+  // Sleep data (from /sleep endpoint)
+  const sleepRec=data.sleep?.records?.[0];
+  const sleep_perf=sleepRec?.score?.sleep_performance_percentage??null;
+  const sleep_ms=sleepRec?.score?.stage_summary?.total_in_bed_time_milli??null;
+  const sleep_hrs=sleep_ms?Math.round(sleep_ms/360000)/10:null;
+  const rem_ms=sleepRec?.score?.stage_summary?.total_rem_sleep_time_milli??0;
+  const deep_ms=sleepRec?.score?.stage_summary?.total_slow_wave_sleep_time_milli??0;
+  const light_ms=sleepRec?.score?.stage_summary?.total_light_sleep_time_milli??0;
+  const total_sleep_ms=(rem_ms+deep_ms+light_ms)||1;
+
+  // Workouts (from /workout endpoint)
+  const workouts=data.workouts?.records||[];
+
+  // 30d history
   const strain30=[...cycles].reverse().map(c=>c.score?.strain??null).filter(v=>v!==null);
   const hr30=[...cycles].reverse().map(c=>c.score?.average_heart_rate??null).filter(v=>v!==null);
   const kcal30=[...cycles].reverse().map(c=>c.score?.kilojoule?Math.round(c.score.kilojoule/4.184):null).filter(v=>v!==null);
+  const recovery30=[...(data.recovery?.records||[])].reverse().map(r=>r.score?.recovery_score??null).filter(v=>v!==null);
+  const hrv30=[...(data.recovery?.records||[])].reverse().map(r=>r.score?.hrv_rmssd_milli??null).filter(v=>v!==null);
+  const sleep30=[...(data.sleep?.records||[])].reverse().map(s=>s.score?.sleep_performance_percentage??null).filter(v=>v!==null);
 
   const strainColor=scoreColor(strain?Math.min(strain/21*100,100):null);
 
   return(
     <div>
-      {/* Top metrics from cycles */}
+      {/* Top metrics: Recovery Score, HRV, RHR, Strain */}
       <div className="g g4" style={{marginBottom:14}}>
         {[
+          {l:'Recovery Score',v:recovery_score!==null?Math.round(recovery_score)+'%':'–',c:scoreColor(recovery_score),sub:recovery_score!==null?scoreLabel(recovery_score):'Aguardando'},
+          {l:'HRV',v:hrv!==null?Math.round(hrv)+' ms':'–',c:'#a855f7',sub:'RMSSD'},
+          {l:'RHR',v:rhr!==null?rhr+' bpm':'–',c:'#3b82f6',sub:'FC de repouso'},
           {l:'Strain hoje',v:strain!==null?Math.round(strain*10)/10:'–',c:strainColor,sub:'Carga cardiovascular'},
-          {l:'FC média',v:avg_hr!==null?avg_hr+' bpm':'–',c:'#3b82f6',sub:'Hoje'},
-          {l:'FC máxima',v:max_hr!==null?max_hr+' bpm':'–',c:'#ef4444',sub:'Hoje'},
-          {l:'Calorias',v:kcal!==null?kcal+' kcal':'–',c:'#f97316',sub:'Hoje'},
         ].map(m=>(
           <div key={m.l} className="card">
             <div className="ct">{m.l}</div>
@@ -285,6 +309,58 @@ function WhoopMetrics({whoop}){
             <div style={{fontSize:11,color:'var(--t3)',marginTop:5}}>{m.sub}</div>
           </div>
         ))}
+      </div>
+
+      {/* Recovery + Sleep row */}
+      <div className="g g2" style={{marginBottom:14}}>
+        <div className="card">
+          <div className="ct">Recovery</div>
+          <div style={{display:'flex',alignItems:'center',gap:18,marginBottom:10}}>
+            <div style={{position:'relative',flexShrink:0}}>
+              <Donut pct={recovery_score??0} color={scoreColor(recovery_score)} size={80} stroke={7}/>
+              <div style={{position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center',flexDirection:'column'}}>
+                <div style={{fontSize:16,fontWeight:900,color:scoreColor(recovery_score)}}>{recovery_score!==null?Math.round(recovery_score):'–'}%</div>
+              </div>
+            </div>
+            <div style={{flex:1}}>
+              <div style={{fontSize:13,fontWeight:700,color:scoreColor(recovery_score),marginBottom:10}}>{recovery_score!==null?scoreLabel(recovery_score):'Aguardando dados'}</div>
+              {[['HRV',hrv!==null?Math.round(hrv)+' ms':'–','#a855f7'],['RHR',rhr!==null?rhr+' bpm':'–','#3b82f6'],['SpO2',spo2!==null?Math.round(spo2*10)/10+'%':'–','#22c55e'],['Temp. pele',skin_temp!==null?skin_temp.toFixed(1)+'°C':'–','#f59e0b']].map(([l,v,c])=>(
+                <div key={l} style={{display:'flex',justifyContent:'space-between',marginBottom:5}}>
+                  <span style={{fontSize:11,color:'var(--t3)'}}>{l}</span>
+                  <span style={{fontSize:11,fontWeight:700,color:c}}>{v}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="card">
+          <div className="ct">Sono</div>
+          <div style={{display:'flex',alignItems:'center',gap:18,marginBottom:10}}>
+            <div style={{position:'relative',flexShrink:0}}>
+              <Donut pct={sleep_perf??0} color="#3b82f6" size={80} stroke={7}/>
+              <div style={{position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center',flexDirection:'column'}}>
+                <div style={{fontSize:16,fontWeight:900,color:'#3b82f6'}}>{sleep_perf!==null?Math.round(sleep_perf):'–'}%</div>
+              </div>
+            </div>
+            <div style={{flex:1}}>
+              <div style={{fontSize:13,fontWeight:600,marginBottom:10,color:'var(--t)'}}>{sleep_hrs!==null?sleep_hrs+'h no leito':'– h no leito'}</div>
+              {[
+                ['REM',rem_ms,'#a855f7'],
+                ['Profundo',deep_ms,'#3b82f6'],
+                ['Leve',light_ms,'#6366f1'],
+              ].map(([l,ms,c])=>(
+                <div key={l} style={{marginBottom:6}}>
+                  <div style={{display:'flex',justifyContent:'space-between',marginBottom:2}}>
+                    <span style={{fontSize:10,color:'var(--t3)'}}>{l}</span>
+                    <span style={{fontSize:10,fontWeight:700,color:c}}>{Math.round(ms/60000/60*10)/10}h</span>
+                  </div>
+                  <div className="pbar"><div className="pf" style={{width:(ms/total_sleep_ms*100)+'%',background:c}}/></div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
       </div>
 
       <div className="g g2" style={{marginBottom:14}}>
@@ -340,13 +416,48 @@ function WhoopMetrics({whoop}){
         </div>
       </div>
 
-      {/* 30d charts */}
+      {/* Workouts recentes */}
+      {workouts.length>0&&(
+        <div className="card" style={{marginBottom:14}}>
+          <div className="ct">Treinos recentes</div>
+          {workouts.slice(0,5).map((w,i)=>(
+            <div key={i} style={{display:'flex',alignItems:'center',gap:12,padding:'9px 0',borderBottom:i<Math.min(workouts.length,5)-1?'1px solid var(--b)':'none'}}>
+              <div style={{width:36,height:36,borderRadius:'var(--rs)',background:'var(--pbg)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:18,flexShrink:0}}>🏋️</div>
+              <div style={{flex:1}}>
+                <div style={{fontSize:13,fontWeight:600}}>{w.sport_name||'Treino'}</div>
+                <div style={{fontSize:11,color:'var(--t3)',marginTop:1}}>{new Date(w.start).toLocaleDateString('pt-BR',{weekday:'short',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}</div>
+              </div>
+              <div style={{display:'flex',gap:14,textAlign:'right'}}>
+                <div>
+                  <div style={{fontSize:13,fontWeight:700,color:'#f97316'}}>{w.score?.strain?Math.round(w.score.strain*10)/10:'–'}</div>
+                  <div style={{fontSize:10,color:'var(--t3)'}}>strain</div>
+                </div>
+                <div>
+                  <div style={{fontSize:13,fontWeight:700}}>{w.score?.kilojoule?Math.round(w.score.kilojoule/4.184):'–'}</div>
+                  <div style={{fontSize:10,color:'var(--t3)'}}>kcal</div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Recovery + HRV 30d charts */}
+      {recovery30.length>1&&(
+        <div className="g g2" style={{marginBottom:14}}>
+          <div className="card"><div className="ct">Recovery Score 30d (%)</div><LineChart data={recovery30} color="#22c55e"/></div>
+          <div className="card"><div className="ct">HRV 30d (ms)</div><LineChart data={hrv30} color="#a855f7"/></div>
+        </div>
+      )}
+
+      {/* Strain + Sono 30d charts */}
       {strain30.length>1&&(
         <div className="g g2" style={{marginBottom:14}}>
           <div className="card"><div className="ct">Strain 30d</div><LineChart data={strain30} color="#f97316"/></div>
-          <div className="card"><div className="ct">Calorias 30d (kcal)</div><LineChart data={kcal30} color="#a855f7"/></div>
+          <div className="card"><div className="ct">{sleep30.length>1?'Sono 30d (%)':'Calorias 30d (kcal)'}</div><LineChart data={sleep30.length>1?sleep30:kcal30} color={sleep30.length>1?'#3b82f6':'#a855f7'}/></div>
         </div>
       )}
+
       {hr30.length>1&&(
         <div className="g g2" style={{marginBottom:14}}>
           <div className="card"><div className="ct">FC média 30d (bpm)</div><LineChart data={hr30} color="#3b82f6"/></div>
@@ -407,12 +518,12 @@ const GOALS=[
 // PAGES
 // ═══════════════════════════════════════════════════════════════
 function DashboardPage({checks,setChecks,whoop}){
-  const TODAY=new Date('2026-06-28');
+  const TODAY=new Date();
   const todayEvs=evDay(TODAY);
   const done=checks.filter(c=>c.done).length;
   const tokens=getTokens();
 
-  // Derive WHOOP quick metrics for top row
+  // Derive WHOOP quick metrics
   const lc=whoop?.data?.cycles?.records?.[0];
   const strain=lc?.score?.strain??null;
   const avg_hr=lc?.score?.average_heart_rate??null;
@@ -420,12 +531,22 @@ function DashboardPage({checks,setChecks,whoop}){
   const kcal=lc?.score?.kilojoule?Math.round(lc.score.kilojoule/4.184):null;
   const weightKg=whoop?.data?.body?.weight_kilogram??null;
 
+  // Recovery, HRV, RHR, Sleep from new endpoints
+  const cr=whoop?.data?.cycle_recovery;
+  const recovery_score=cr?.score?.recovery_score??null;
+  const hrv=cr?.score?.hrv_rmssd_milli??null;
+  const rhr=cr?.score?.resting_heart_rate??null;
+  const sleepRec=whoop?.data?.sleep?.records?.[0];
+  const sleep_perf=sleepRec?.score?.sleep_performance_percentage??null;
+
   const metricsRow=[
+    {l:'Recovery',v:recovery_score!==null?Math.round(recovery_score)+'%':'–',c:scoreColor(recovery_score),src:tokens?'whoop':'mock'},
+    {l:'HRV',v:hrv!==null?Math.round(hrv)+' ms':'–',c:'#a855f7',src:tokens?'whoop':'mock'},
+    {l:'RHR',v:rhr!==null?rhr+' bpm':'–',c:'#3b82f6',src:tokens?'whoop':'mock'},
     {l:'Strain',v:strain!==null?Math.round(strain*10)/10:'–',c:strain?scoreColor(Math.min(strain/21*100,100)):'#444',src:tokens?'whoop':'mock'},
-    {l:'FC média',v:avg_hr!==null?avg_hr+' bpm':'–',c:'#3b82f6',src:tokens?'whoop':'mock'},
-    {l:'FC máxima',v:max_hr!==null?max_hr+' bpm':'–',c:'#ef4444',src:tokens?'whoop':'mock'},
-    {l:'Calorias',v:kcal!==null?kcal+' kcal':'–',c:'#f97316',src:tokens?'whoop':'mock'},
   ];
+
+  const dateStr=TODAY.toLocaleDateString('pt-BR',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
 
   return(
     <div className="page">
@@ -434,7 +555,7 @@ function DashboardPage({checks,setChecks,whoop}){
           <div className="pt">Shalom, Isaac 👋</div>
           {tokens&&<div className="live">WHOOP + Google Calendar</div>}
         </div>
-        <div className="ps">Domingo, 28 de junho de 2026</div>
+        <div className="ps" style={{textTransform:'capitalize'}}>{dateStr}</div>
       </div>
 
       <div className="g g4" style={{marginBottom:14}}>
@@ -480,9 +601,9 @@ function DashboardPage({checks,setChecks,whoop}){
                 </div>
                 <div className="g g3" style={{gap:8}}>
                   {[
+                    ['Recovery',recovery_score!==null?Math.round(recovery_score)+'%':'–',scoreColor(recovery_score)],
                     ['Strain',strain!==null?Math.round(strain*10)/10:'–','#f97316'],
-                    ['FC média',avg_hr?avg_hr+' bpm':'–','#3b82f6'],
-                    ['Calorias',kcal?kcal+' kcal':'–','#a855f7'],
+                    ['Sono',sleep_perf!==null?Math.round(sleep_perf)+'%':'–','#3b82f6'],
                   ].map(([l,v,c])=>(
                     <div key={l} style={{background:'rgba(0,0,0,.3)',borderRadius:'var(--rs)',padding:'8px 10px',textAlign:'center'}}>
                       <div style={{fontSize:16,fontWeight:800,color:c}}>{v}</div>
@@ -529,17 +650,26 @@ function DashboardPage({checks,setChecks,whoop}){
           <div className="ct">Dados de hoje</div>
           <div style={{display:'flex',gap:16,alignItems:'center',marginBottom:14}}>
             <div style={{position:'relative',flexShrink:0}}>
-              <Donut pct={strain?Math.min(strain/21*100,100):0} color="#f97316"/>
+              <Donut pct={recovery_score!==null?recovery_score:strain?Math.min(strain/21*100,100):0} color={recovery_score!==null?scoreColor(recovery_score):'#f97316'}/>
               <div style={{position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center',flexDirection:'column'}}>
-                <div style={{fontSize:14,fontWeight:800,color:'#f97316'}}>{strain?Math.round(strain*10)/10:'–'}</div>
-                <div style={{fontSize:8,color:'var(--t3)'}}>strain</div>
+                {recovery_score!==null
+                  ? <><div style={{fontSize:12,fontWeight:800,color:scoreColor(recovery_score)}}>{Math.round(recovery_score)}%</div><div style={{fontSize:8,color:'var(--t3)'}}>recovery</div></>
+                  : <><div style={{fontSize:14,fontWeight:800,color:'#f97316'}}>{strain?Math.round(strain*10)/10:'–'}</div><div style={{fontSize:8,color:'var(--t3)'}}>strain</div></>
+                }
               </div>
             </div>
             <div style={{flex:1}}>
-              {[['Peso',weightKg?weightKg.toFixed(1)+' kg':'–','#6366f1'],['FC média',avg_hr?avg_hr+' bpm':'–','#3b82f6'],['FC máxima',max_hr?max_hr+' bpm':'–','#ef4444'],['Calorias',kcal?kcal+' kcal':'–','#f97316']].map(([l,v,c])=>(
-                <div key={l} style={{display:'flex',justifyContent:'space-between',marginBottom:6}}>
-                  <span style={{fontSize:12,color:'var(--t2)'}}>{l}</span>
-                  <span style={{fontSize:12,fontWeight:700,color:c}}>{v}</span>
+              {[
+                ['Recovery',recovery_score!==null?Math.round(recovery_score)+'%':'–',scoreColor(recovery_score)],
+                ['HRV',hrv!==null?Math.round(hrv)+' ms':'–','#a855f7'],
+                ['RHR',rhr!==null?rhr+' bpm':'–','#3b82f6'],
+                ['Sono',sleep_perf!==null?Math.round(sleep_perf)+'%':'–','#3b82f6'],
+                ['Peso',weightKg?weightKg.toFixed(1)+' kg':'–','#6366f1'],
+                ['Strain',strain?Math.round(strain*10)/10:'–','#f97316'],
+              ].map(([l,v,c])=>(
+                <div key={l} style={{display:'flex',justifyContent:'space-between',marginBottom:5}}>
+                  <span style={{fontSize:11,color:'var(--t2)'}}>{l}</span>
+                  <span style={{fontSize:11,fontWeight:700,color:c}}>{v}</span>
                 </div>
               ))}
             </div>
@@ -553,7 +683,7 @@ function DashboardPage({checks,setChecks,whoop}){
 
 function FitnessPage({whoop}){
   const tokens=getTokens();
-  const wh=(data,recovery)=>{
+  const wh=()=>{
     const wHistory=[84.8,84.5,84.2,83.9,84.1,83.8,83.5,83.7,83.4,83.2,83.0,83.2];
     const fHistory=[19.8,19.6,19.4,19.2,19.3,19.1,18.9,19.0,18.7,18.5,18.3,18.3];
     return(
@@ -611,15 +741,17 @@ function HabitsPage(){
 }
 
 function CalendarPage(){
-  const[month,setMonth]=useState(5);
-  const[year]=useState(2026);
-  const[selDay,setSelDay]=useState(28);
+  const _now=new Date();
+  const[month,setMonth]=useState(_now.getMonth());
+  const[year]=useState(_now.getFullYear());
+  const[selDay,setSelDay]=useState(_now.getDate());
   const mNames=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
   const first=new Date(year,month,1).getDay();
   const days=new Date(year,month+1,0).getDate();
   const selEvs=evDay(new Date(year,month,selDay));
   const withEvs=new Set(GCAL_EVENTS.map(e=>{const d=new Date(e.start);return d.getFullYear()===year&&d.getMonth()===month?d.getDate():null}).filter(Boolean));
-  const upcoming=GCAL_EVENTS.filter(e=>new Date(e.start)>=new Date('2026-06-28')).sort((a,b)=>new Date(a.start)-new Date(b.start)).slice(0,10);
+  const upcoming=GCAL_EVENTS.filter(e=>new Date(e.start)>=new Date(_now.getFullYear(),_now.getMonth(),_now.getDate())).sort((a,b)=>new Date(a.start)-new Date(b.start)).slice(0,10);
+  const todayD=_now.getDate(),todayM=_now.getMonth(),todayY=_now.getFullYear();
   return(
     <div className="page">
       <div className="ph">
@@ -641,7 +773,7 @@ function CalendarPage(){
             <div className="cg">
               {Array.from({length:first}).map((_,i)=><div key={\`e\${i}\`} className="cd empty"/>)}
               {Array.from({length:days}).map((_,i)=>{
-                const day=i+1,isToday=day===28&&month===5,isSel=day===selDay&&!isToday,hasEv=withEvs.has(day);
+                const day=i+1,isToday=day===todayD&&month===todayM&&year===todayY,isSel=day===selDay&&!isToday,hasEv=withEvs.has(day);
                 return <div key={day} className={\`cd \${isToday?'today':''} \${hasEv&&!isToday?'hev':''}\`}
                   style={isSel&&!isToday?{background:'var(--s3)',color:'var(--t)',border:'1px solid var(--accent)'}:{}}
                   onClick={()=>setSelDay(day)}>{day}</div>;
@@ -650,7 +782,7 @@ function CalendarPage(){
           </div>
           <div className="card">
             <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12}}>
-              <div className="ct" style={{marginBottom:0}}>{selDay===28&&month===5?'Hoje':'Dia '+selDay}</div>
+              <div className="ct" style={{marginBottom:0}}>{selDay===todayD&&month===todayM?'Hoje':'Dia '+selDay}</div>
               <div className="badge z-">{selEvs.length} eventos</div>
             </div>
             {selEvs.length===0?<div style={{color:'var(--t3)',fontSize:13}}>Nenhum evento</div>:selEvs.map((e,i)=>(
@@ -668,7 +800,7 @@ function CalendarPage(){
             <div className="live">Ao vivo</div>
           </div>
           {upcoming.map((e,i)=>{
-            const d=new Date(e.start),isToday=sameDay(d,new Date('2026-06-28'));
+            const d=new Date(e.start),isToday=sameDay(d,_now);
             const dateStr=e.allDay?'Dia todo':d.toLocaleDateString('pt-BR',{day:'numeric',month:'short'});
             return(
               <div key={i} style={{display:'flex',gap:12,padding:'10px 0',borderBottom:'1px solid var(--b)'}}>
@@ -758,6 +890,15 @@ function App(){
   useEffect(()=>{
     const t=getTokens();
     if(t?.access_token)fetchWhoop(t.access_token);
+  },[]);
+
+  // Auto-refresh token every 55 minutes
+  useEffect(()=>{
+    const interval=setInterval(()=>{
+      const t=getTokens();
+      if(t?.access_token)fetchWhoop(t.access_token);
+    },55*60*1000);
+    return()=>clearInterval(interval);
   },[]);
 
   async function fetchWhoop(token){
