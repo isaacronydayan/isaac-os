@@ -247,39 +247,37 @@ function WhoopMetrics({whoop}){
   );
 
   // Parse WHOOP data
-  const latest_recovery=data.recovery?.records?.[0];
-  const latest_sleep=data.sleep?.records?.[0];
-  const latest_cycle=data.cycles?.records?.[0];
-  const latest_workout=data.workouts?.records?.[0];
+  const cycles=data.cycles?.records||[];
+  const latest_cycle=cycles[0];
   const body=data.body;
   const profile=data.profile;
 
-  const recovery_score=latest_recovery?.score?.recovery_score??null;
-  const hrv=latest_recovery?.score?.hrv_rmssd_milli??null;
-  const rhr=latest_recovery?.score?.resting_heart_rate??null;
-  const sleep_perf=latest_sleep?.score?.sleep_performance_percentage??null;
-  const sleep_hrs=latest_sleep?.score?.stage_summary?.total_in_bed_time_milli
-    ?Math.round(latest_sleep.score.stage_summary.total_in_bed_time_milli/3600000*10)/10 : null;
+  // All available data comes from cycles
   const strain=latest_cycle?.score?.strain??null;
+  const avg_hr=latest_cycle?.score?.average_heart_rate??null;
+  const max_hr=latest_cycle?.score?.max_heart_rate??null;
+  const kj=latest_cycle?.score?.kilojoule??null;
+  const kcal=kj?Math.round(kj/4.184):null;
   const weight_kg=body?.weight_kilogram??null;
+  const height_m=body?.height_meter??null;
+  const max_hr_body=body?.max_heart_rate??null;
 
-  // Build 30d history arrays
-  const rec30=(data.recovery?.records||[]).slice(0,30).reverse().map(r=>r.score?.recovery_score??null).filter(v=>v!==null);
-  const hrv30=(data.recovery?.records||[]).slice(0,30).reverse().map(r=>r.score?.hrv_rmssd_milli??null).filter(v=>v!==null);
-  const strain30=(data.cycles?.records||[]).slice(0,30).reverse().map(c=>c.score?.strain??null).filter(v=>v!==null);
-  const sleep30=(data.sleep?.records||[]).slice(0,30).reverse().map(s=>s.score?.sleep_performance_percentage??null).filter(v=>v!==null);
+  // 30d history from cycles
+  const strain30=[...cycles].reverse().map(c=>c.score?.strain??null).filter(v=>v!==null);
+  const hr30=[...cycles].reverse().map(c=>c.score?.average_heart_rate??null).filter(v=>v!==null);
+  const kcal30=[...cycles].reverse().map(c=>c.score?.kilojoule?Math.round(c.score.kilojoule/4.184):null).filter(v=>v!==null);
 
-  const rColor=scoreColor(recovery_score);
+  const strainColor=scoreColor(strain?Math.min(strain/21*100,100):null);
 
   return(
     <div>
-      {/* Top WHOOP metrics */}
+      {/* Top metrics from cycles */}
       <div className="g g4" style={{marginBottom:14}}>
         {[
-          {l:'Recovery',v:recovery_score!==null?recovery_score+'%':'–',c:rColor,sub:scoreLabel(recovery_score)},
-          {l:'HRV',v:hrv!==null?Math.round(hrv)+' ms':'–',c:'#a855f7',sub:'Média noturna'},
-          {l:'RHR',v:rhr!==null?Math.round(rhr)+' bpm':'–',c:'#3b82f6',sub:'Freq. cardíaca em repouso'},
-          {l:'Strain',v:strain!==null?Math.round(strain*10)/10:'–',c:'#f97316',sub:'Carga cardiovascular'},
+          {l:'Strain hoje',v:strain!==null?Math.round(strain*10)/10:'–',c:strainColor,sub:'Carga cardiovascular'},
+          {l:'FC média',v:avg_hr!==null?avg_hr+' bpm':'–',c:'#3b82f6',sub:'Hoje'},
+          {l:'FC máxima',v:max_hr!==null?max_hr+' bpm':'–',c:'#ef4444',sub:'Hoje'},
+          {l:'Calorias',v:kcal!==null?kcal+' kcal':'–',c:'#f97316',sub:'Hoje'},
         ].map(m=>(
           <div key={m.l} className="card">
             <div className="ct">{m.l}</div>
@@ -290,42 +288,7 @@ function WhoopMetrics({whoop}){
       </div>
 
       <div className="g g2" style={{marginBottom:14}}>
-        {/* Sleep */}
-        <div className="card">
-          <div className="ct">Sono</div>
-          <div style={{display:'flex',gap:16,alignItems:'center'}}>
-            <div style={{position:'relative',flexShrink:0}}>
-              <Donut pct={sleep_perf??0} color="#3b82f6"/>
-              <div style={{position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center',flexDirection:'column'}}>
-                <div style={{fontSize:14,fontWeight:800,color:'#3b82f6'}}>{sleep_perf!==null?sleep_perf+'%':'–'}</div>
-                <div style={{fontSize:8,color:'var(--t3)'}}>perf.</div>
-              </div>
-            </div>
-            <div style={{flex:1}}>
-              <div style={{display:'flex',justifyContent:'space-between',marginBottom:8}}>
-                <span style={{fontSize:12,color:'var(--t2)'}}>Duração</span>
-                <span style={{fontSize:13,fontWeight:700}}>{sleep_hrs!==null?sleep_hrs+'h':'–'}</span>
-              </div>
-              {latest_sleep?.score?.stage_summary&&(()=>{
-                const st=latest_sleep.score.stage_summary;
-                const tot=st.total_in_bed_time_milli||1;
-                return[
-                  ['REM',st.total_rem_sleep_time_milli,'#a855f7'],
-                  ['Profundo',st.total_slow_wave_sleep_time_milli,'#3b82f6'],
-                  ['Leve',st.total_light_sleep_time_milli,'#22c55e'],
-                ].map(([l,v,c])=>(
-                  <div key={l} style={{display:'flex',alignItems:'center',gap:7,marginBottom:5}}>
-                    <div style={{width:6,height:6,borderRadius:'50%',background:c}}/>
-                    <span style={{fontSize:11,color:'var(--t2)',flex:1}}>{l}</span>
-                    <span style={{fontSize:11,fontWeight:600}}>{v?Math.round(v/tot*100):'–'}%</span>
-                  </div>
-                ));
-              })()}
-            </div>
-          </div>
-        </div>
-
-        {/* Body + Profile */}
+        {/* Body metrics */}
         <div className="card">
           <div className="ct">Corpo & Perfil</div>
           {profile&&(
@@ -339,10 +302,10 @@ function WhoopMetrics({whoop}){
           )}
           <div className="g g2" style={{gap:8}}>
             {[
-              ['Peso',weight_kg!==null?weight_kg.toFixed(1)+' kg':'–','var(--t)'],
-              ['Altura',body?.height_meter!=null?(body.height_meter*100).toFixed(0)+' cm':'–','var(--t)'],
-              ['Último treino',latest_workout?.sport_name||'–','#6366f1'],
-              ['Duração',latest_workout?.score?.kilojoule!=null?(Math.round(latest_workout.score.kilojoule/4.184)+' kcal'):'–','#f97316'],
+              ['Peso',weight_kg!==null?weight_kg.toFixed(1)+' kg':'–','#6366f1'],
+              ['Altura',height_m!=null?(height_m*100).toFixed(0)+' cm':'–','var(--t)'],
+              ['FC máx (corpo)',max_hr_body?max_hr_body+' bpm':'–','#ef4444'],
+              ['Strain hoje',strain!==null?Math.round(strain*10)/10:'–','#f97316'],
             ].map(([l,v,c])=>(
               <div key={l} style={{background:'var(--s2)',borderRadius:'var(--rs)',padding:'9px 11px'}}>
                 <div style={{fontSize:10,color:'var(--t3)',marginBottom:2}}>{l}</div>
@@ -351,42 +314,58 @@ function WhoopMetrics({whoop}){
             ))}
           </div>
         </div>
+
+        {/* Last 7 cycles */}
+        <div className="card">
+          <div className="ct">Últimos 7 dias — Strain</div>
+          <div style={{display:'flex',gap:4,alignItems:'flex-end',height:80,marginBottom:8}}>
+            {cycles.slice(0,7).reverse().map((c,i)=>{
+              const s=c.score?.strain||0;
+              const pct=Math.min(s/21*100,100);
+              const col=s>=14?'#ef4444':s>=10?'#f97316':s>=7?'#f59e0b':'#22c55e';
+              return(
+                <div key={i} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',gap:3}}>
+                  <div style={{fontSize:9,color:'var(--t3)',fontWeight:600}}>{Math.round(s*10)/10}</div>
+                  <div style={{width:'100%',background:col,borderRadius:'3px 3px 0 0',height:pct+'%',minHeight:4}}/>
+                </div>
+              );
+            })}
+          </div>
+          <div style={{display:'flex',gap:4}}>
+            {cycles.slice(0,7).reverse().map((c,i)=>{
+              const d=new Date(c.start);
+              return <div key={i} style={{flex:1,fontSize:9,color:'var(--t3)',textAlign:'center'}}>{d.toLocaleDateString('pt-BR',{day:'numeric',month:'numeric'})}</div>;
+            })}
+          </div>
+        </div>
       </div>
 
-      {/* 30-day charts */}
-      {rec30.length>1&&(
-        <div className="g g2" style={{marginBottom:14}}>
-          <div className="card"><div className="ct">Recovery 30d (%)</div><LineChart data={rec30} color="#22c55e"/></div>
-          <div className="card"><div className="ct">HRV 30d (ms)</div><LineChart data={hrv30} color="#a855f7"/></div>
-        </div>
-      )}
+      {/* 30d charts */}
       {strain30.length>1&&(
         <div className="g g2" style={{marginBottom:14}}>
           <div className="card"><div className="ct">Strain 30d</div><LineChart data={strain30} color="#f97316"/></div>
-          <div className="card"><div className="ct">Sleep Performance 30d (%)</div><LineChart data={sleep30} color="#3b82f6"/></div>
+          <div className="card"><div className="ct">Calorias 30d (kcal)</div><LineChart data={kcal30} color="#a855f7"/></div>
         </div>
       )}
-
-      {/* Recent workouts */}
-      {data.workouts?.records?.length>0&&(
-        <div className="card">
-          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12}}>
-            <div className="ct" style={{marginBottom:0}}>Últimos treinos</div>
-            <div className="live">WHOOP</div>
+      {hr30.length>1&&(
+        <div className="g g2" style={{marginBottom:14}}>
+          <div className="card"><div className="ct">FC média 30d (bpm)</div><LineChart data={hr30} color="#3b82f6"/></div>
+          <div className="card">
+            <div className="ct">Ciclos recentes</div>
+            {cycles.slice(0,5).map((c,i)=>(
+              <div key={i} style={{display:'flex',alignItems:'center',gap:12,padding:'9px 0',borderBottom:i<4?'1px solid var(--b)':'none'}}>
+                <div style={{width:34,height:34,borderRadius:'var(--rs)',background:'var(--obg)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:14,flexShrink:0}}>⚡</div>
+                <div style={{flex:1}}>
+                  <div style={{fontSize:12,fontWeight:600}}>{new Date(c.start).toLocaleDateString('pt-BR',{day:'numeric',month:'short',weekday:'short'})}</div>
+                  <div style={{fontSize:11,color:'var(--t3)',marginTop:1}}>FC: {c.score?.average_heart_rate||'–'} bpm média</div>
+                </div>
+                <div style={{display:'flex',gap:10,textAlign:'right'}}>
+                  <div><div style={{fontSize:12,fontWeight:700,color:'#f97316'}}>{Math.round((c.score?.strain||0)*10)/10}</div><div style={{fontSize:10,color:'var(--t3)'}}>strain</div></div>
+                  <div><div style={{fontSize:12,fontWeight:700}}>{c.score?.kilojoule?Math.round(c.score.kilojoule/4.184):0}</div><div style={{fontSize:10,color:'var(--t3)'}}>kcal</div></div>
+                </div>
+              </div>
+            ))}
           </div>
-          {(data.workouts.records||[]).slice(0,5).map((w,i)=>(
-            <div key={i} style={{display:'flex',alignItems:'center',gap:12,padding:'10px 0',borderBottom:i<4?'1px solid var(--b)':'none'}}>
-              <div style={{width:34,height:34,borderRadius:'var(--rs)',background:'var(--pbg)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:16,flexShrink:0}}>💪</div>
-              <div style={{flex:1}}>
-                <div style={{fontSize:13,fontWeight:600}}>{w.sport_name||'Treino'}</div>
-                <div style={{fontSize:11,color:'var(--t3)',marginTop:1}}>{new Date(w.start).toLocaleDateString('pt-BR',{day:'numeric',month:'short'})}</div>
-              </div>
-              <div style={{display:'flex',gap:10,textAlign:'right'}}>
-                {w.score?.strain&&<div><div style={{fontSize:12,fontWeight:700}}>{Math.round(w.score.strain*10)/10}</div><div style={{fontSize:10,color:'var(--t3)'}}>strain</div></div>}
-                {w.score?.kilojoule&&<div><div style={{fontSize:12,fontWeight:700}}>{Math.round(w.score.kilojoule/4.184)}</div><div style={{fontSize:10,color:'var(--t3)'}}>kcal</div></div>}
-              </div>
-            </div>
-          ))}
         </div>
       )}
     </div>
@@ -434,21 +413,18 @@ function DashboardPage({checks,setChecks,whoop}){
   const tokens=getTokens();
 
   // Derive WHOOP quick metrics for top row
-  const wr=whoop?.data?.recovery?.records?.[0];
-  const ws=whoop?.data?.sleep?.records?.[0];
-  const recovery=wr?.score?.recovery_score??null;
-  const hrv=wr?.score?.hrv_rmssd_milli??null;
-  const sleep_hrs=ws?.score?.stage_summary?.total_in_bed_time_milli
-    ?Math.round(ws.score.stage_summary.total_in_bed_time_milli/3600000*10)/10:null;
-  const rhr=wr?.score?.resting_heart_rate??null;
-  const strain=whoop?.data?.cycles?.records?.[0]?.score?.strain??null;
+  const lc=whoop?.data?.cycles?.records?.[0];
+  const strain=lc?.score?.strain??null;
+  const avg_hr=lc?.score?.average_heart_rate??null;
+  const max_hr=lc?.score?.max_heart_rate??null;
+  const kcal=lc?.score?.kilojoule?Math.round(lc.score.kilojoule/4.184):null;
   const weightKg=whoop?.data?.body?.weight_kilogram??null;
 
   const metricsRow=[
-    {l:'Recovery',v:recovery!==null?recovery+'%':'–',c:scoreColor(recovery),src:tokens?'whoop':'mock'},
-    {l:'Sono',v:sleep_hrs!==null?sleep_hrs+'h':'–',c:'#3b82f6',src:tokens?'whoop':'mock'},
-    {l:'HRV',v:hrv!==null?Math.round(hrv)+' ms':'–',c:'#a855f7',src:tokens?'whoop':'mock'},
-    {l:'Strain',v:strain!==null?Math.round(strain*10)/10:'–',c:'#f97316',src:tokens?'whoop':'mock'},
+    {l:'Strain',v:strain!==null?Math.round(strain*10)/10:'–',c:strain?scoreColor(Math.min(strain/21*100,100)):'#444',src:tokens?'whoop':'mock'},
+    {l:'FC média',v:avg_hr!==null?avg_hr+' bpm':'–',c:'#3b82f6',src:tokens?'whoop':'mock'},
+    {l:'FC máxima',v:max_hr!==null?max_hr+' bpm':'–',c:'#ef4444',src:tokens?'whoop':'mock'},
+    {l:'Calorias',v:kcal!==null?kcal+' kcal':'–',c:'#f97316',src:tokens?'whoop':'mock'},
   ];
 
   return(
@@ -504,9 +480,9 @@ function DashboardPage({checks,setChecks,whoop}){
                 </div>
                 <div className="g g3" style={{gap:8}}>
                   {[
-                    ['Recovery',recovery!==null?recovery+'%':'–',scoreColor(recovery)],
-                    ['HRV',hrv!==null?Math.round(hrv)+' ms':'–','#a855f7'],
                     ['Strain',strain!==null?Math.round(strain*10)/10:'–','#f97316'],
+                    ['FC média',avg_hr?avg_hr+' bpm':'–','#3b82f6'],
+                    ['Calorias',kcal?kcal+' kcal':'–','#a855f7'],
                   ].map(([l,v,c])=>(
                     <div key={l} style={{background:'rgba(0,0,0,.3)',borderRadius:'var(--rs)',padding:'8px 10px',textAlign:'center'}}>
                       <div style={{fontSize:16,fontWeight:800,color:c}}>{v}</div>
@@ -550,17 +526,17 @@ function DashboardPage({checks,setChecks,whoop}){
         </div>
 
         <div className="card">
-          <div className="ct">Sleep — ontem</div>
+          <div className="ct">Dados de hoje</div>
           <div style={{display:'flex',gap:16,alignItems:'center',marginBottom:14}}>
             <div style={{position:'relative',flexShrink:0}}>
-              <Donut pct={ws?.score?.sleep_performance_percentage??0} color="#3b82f6"/>
+              <Donut pct={strain?Math.min(strain/21*100,100):0} color="#f97316"/>
               <div style={{position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center',flexDirection:'column'}}>
-                <div style={{fontSize:14,fontWeight:800,color:'#3b82f6'}}>{sleep_hrs!==null?sleep_hrs:'–'}</div>
-                <div style={{fontSize:8,color:'var(--t3)'}}>{sleep_hrs?'horas':'–'}</div>
+                <div style={{fontSize:14,fontWeight:800,color:'#f97316'}}>{strain?Math.round(strain*10)/10:'–'}</div>
+                <div style={{fontSize:8,color:'var(--t3)'}}>strain</div>
               </div>
             </div>
             <div style={{flex:1}}>
-              {[['RHR',rhr?Math.round(rhr)+' bpm':'–','var(--t)'],['Peso',weightKg?weightKg.toFixed(1)+' kg':'–','#6366f1'],['Sleep',ws?.score?.sleep_performance_percentage!=null?ws.score.sleep_performance_percentage+'%':'–','#3b82f6'],['Strain',strain?Math.round(strain*10)/10:'–','#f97316']].map(([l,v,c])=>(
+              {[['Peso',weightKg?weightKg.toFixed(1)+' kg':'–','#6366f1'],['FC média',avg_hr?avg_hr+' bpm':'–','#3b82f6'],['FC máxima',max_hr?max_hr+' bpm':'–','#ef4444'],['Calorias',kcal?kcal+' kcal':'–','#f97316']].map(([l,v,c])=>(
                 <div key={l} style={{display:'flex',justifyContent:'space-between',marginBottom:6}}>
                   <span style={{fontSize:12,color:'var(--t2)'}}>{l}</span>
                   <span style={{fontSize:12,fontWeight:700,color:c}}>{v}</span>
