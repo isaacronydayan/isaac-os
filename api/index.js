@@ -787,9 +787,27 @@ function App(){
   async function fetchWhoop(token){
     setWhoop(s=>({...s,loading:true,error:null}));
     try{
-      const r=await fetch('/whoop/data',{headers:{Authorization:'Bearer '+token}});
+      const stored=getTokens();
+      const headers={
+        'Authorization':'Bearer '+token,
+        'Content-Type':'application/json',
+      };
+      if(stored?.refresh_token){
+        headers['X-Refresh-Token']=stored.refresh_token;
+      }
+      const r=await fetch('/whoop/data',{headers});
       if(!r.ok)throw new Error('HTTP '+r.status);
       const data=await r.json();
+      // If server refreshed the token, save new tokens
+      if(data._new_tokens?.access_token){
+        saveTokens({
+          access_token:data._new_tokens.access_token,
+          refresh_token:data._new_tokens.refresh_token||stored?.refresh_token,
+          expires_in:data._new_tokens.expires_in||3600,
+          scope:stored?.scope||'',
+          saved_at:Date.now(),
+        });
+      }
       setWhoop({loading:false,data,error:null});
     }catch(err){
       setWhoop({loading:false,data:null,error:err.message});
