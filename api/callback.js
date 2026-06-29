@@ -31,12 +31,10 @@ export default async function handler(req, res) {
     const tokenData = await tokenRes.json();
 
     if (!tokenRes.ok || !tokenData.access_token) {
-      return res.send(errorPage('token_error', tokenData.error_description || 'Failed to exchange code for token.'));
+      return res.send(errorPage('token_error', JSON.stringify(tokenData)));
     }
 
-    // Pass tokens to the frontend via postMessage / URL fragment
     const { access_token, refresh_token, expires_in, scope } = tokenData;
-
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     return res.send(successPage({ access_token, refresh_token, expires_in, scope }));
 
@@ -66,29 +64,41 @@ function successPage({ access_token, refresh_token, expires_in, scope }) {
 <div class="box">
   <div class="icon">✅</div>
   <h2>WHOOP conectado!</h2>
-  <p>Salvando credenciais e redirecionando para o dashboard…</p>
+  <p>Salvando credenciais e redirecionando…</p>
   <div class="spin"></div>
 </div>
 <script>
-  // Save tokens to localStorage and redirect to dashboard
-  const tokens = {
+(function() {
+  var tokens = {
     access_token:  ${JSON.stringify(access_token)},
     refresh_token: ${JSON.stringify(refresh_token)},
     expires_in:    ${JSON.stringify(expires_in)},
     scope:         ${JSON.stringify(scope)},
     saved_at:      Date.now()
   };
+
+  // Save to localStorage
   try {
     localStorage.setItem('whoop_tokens', JSON.stringify(tokens));
-  } catch(e) {}
-  // If opened in popup, send to opener and close
-  if (window.opener) {
-    window.opener.postMessage({ type: 'WHOOP_AUTH_SUCCESS', tokens }, '*');
-    setTimeout(() => window.close(), 800);
-  } else {
-    // Redirect to main page
-    setTimeout(() => { window.location.href = '/'; }, 800);
+    console.log('WHOOP tokens saved:', tokens.access_token ? 'OK' : 'EMPTY');
+  } catch(e) {
+    console.error('Failed to save tokens:', e);
   }
+
+  // If in popup, message the opener
+  if (window.opener && !window.opener.closed) {
+    try {
+      window.opener.postMessage({ type: 'WHOOP_AUTH_SUCCESS', tokens: tokens }, '*');
+      console.log('Sent postMessage to opener');
+    } catch(e) {
+      console.error('postMessage failed:', e);
+    }
+    setTimeout(function() { window.close(); }, 1000);
+  } else {
+    // Full page redirect
+    setTimeout(function() { window.location.href = '/'; }, 1000);
+  }
+})();
 </script>
 </body>
 </html>`;
@@ -105,7 +115,7 @@ function errorPage(code, description) {
   .box{text-align:center;max-width:400px}
   .icon{font-size:48px;margin-bottom:16px}
   h2{font-size:20px;font-weight:700;color:#ef4444;margin-bottom:8px}
-  p{font-size:13px;color:#888;margin-bottom:4px}
+  p{font-size:13px;color:#888;margin-bottom:4px;word-break:break-all}
   code{font-size:11px;color:#555;background:#111;padding:2px 6px;border-radius:4px}
   a{color:#6366f1;font-size:13px;text-decoration:none;display:inline-block;margin-top:16px}
 </style>
