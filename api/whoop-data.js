@@ -1,28 +1,29 @@
 const BASE = 'https://api.prod.whoop.com/developer/v1';
 
-async function refreshToken(refresh_token) {
-  const res = await fetch('https://api.prod.whoop.com/oauth/oauth2/token', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      grant_type: 'refresh_token',
-      refresh_token,
-      client_id: process.env.WHOOP_CLIENT_ID,
-      client_secret: process.env.WHOOP_CLIENT_SECRET,
-    }),
-  });
-  if (!res.ok) return null;
-  return res.json();
-}
-
 async function get(path, token) {
   const res = await fetch(`${BASE}${path}`, {
     headers: { 'Authorization': `Bearer ${token}` },
   });
   const text = await res.text();
-  let data;
-  try { data = JSON.parse(text); } catch { data = text; }
-  return { status: res.status, ok: res.ok, data };
+  try { return { ok: res.ok, status: res.status, data: JSON.parse(text) }; }
+  catch { return { ok: res.ok, status: res.status, data: text }; }
+}
+
+async function refreshToken(refresh_token) {
+  try {
+    const res = await fetch('https://api.prod.whoop.com/oauth/oauth2/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'refresh_token',
+        refresh_token,
+        client_id: process.env.WHOOP_CLIENT_ID,
+        client_secret: process.env.WHOOP_CLIENT_SECRET,
+      }),
+    });
+    if (!res.ok) return null;
+    return res.json();
+  } catch { return null; }
 }
 
 export default async function handler(req, res) {
@@ -32,10 +33,9 @@ export default async function handler(req, res) {
 
   let token = req.headers['authorization']?.replace('Bearer ', '');
   const refresh = req.headers['x-refresh-token'];
-
   if (!token) return res.status(401).json({ error: 'Missing token' });
 
-  // Try refresh if we have a refresh token
+  // Always try to refresh token first for fresh data
   let newTokens = null;
   if (refresh) {
     const refreshed = await refreshToken(refresh);
@@ -45,12 +45,13 @@ export default async function handler(req, res) {
     }
   }
 
+  // Correct WHOOP API v1 endpoints - no 'order' param, limit max 25
   const [profile, recovery, sleep, cycles, workouts, body] = await Promise.allSettled([
     get('/user/profile/basic', token),
-    get('/recovery?limit=25&order=descending', token),
-    get('/activity/sleep?limit=25&order=descending', token),
-    get('/cycle?limit=25&order=descending', token),
-    get('/activity/workout?limit=10&order=descending', token),
+    get('/recovery?limit=25', token),
+    get('/activity/sleep?limit=25', token),
+    get('/cycle?limit=25', token),
+    get('/activity/workout?limit=10', token),
     get('/user/measurement/body', token),
   ]);
 
