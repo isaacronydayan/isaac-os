@@ -5,6 +5,7 @@
     { "src": "/privacy",     "dest": "/api/privacy.js"     },
     { "src": "/whoop/login", "dest": "/api/whoop-login.js" },
     { "src": "/whoop/data",  "dest": "/api/whoop-data.js"  },
+    { "src": "/debug",       "dest": "/api/debug.js"       },
     { "src": "/(.*)",        "dest": "/api/index.js"       }
   ]
 }
