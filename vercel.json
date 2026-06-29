@@ -1,10 +1,5 @@
 {
   "version": 2,
-  "buildCommand": null,
-  "outputDirectory": null,
-  "functions": {
-    "api/*.js": { "runtime": "@vercel/node@3" }
-  },
   "routes": [
     { "src": "/callback",    "dest": "/api/callback.js"    },
     { "src": "/privacy",     "dest": "/api/privacy.js"     },
