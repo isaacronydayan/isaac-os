@@ -26,12 +26,11 @@ export default async function handler(req, res) {
   }
   const token = auth.slice(7);
 
-  // Fetch all endpoints in parallel
   const [profile, recovery, sleep, cycles, workouts, body] = await Promise.allSettled([
     get('/user/profile/basic', token),
-    get('/recovery?limit=30&order=descending', token),
-    get('/activity/sleep?limit=30&order=descending', token),
-    get('/cycle?limit=30&order=descending', token),
+    get('/recovery?limit=25&order=descending', token),
+    get('/activity/sleep?limit=25&order=descending', token),
+    get('/cycle?limit=25&order=descending', token),
     get('/activity/workout?limit=10&order=descending', token),
     get('/user/measurement/body', token),
   ]);
