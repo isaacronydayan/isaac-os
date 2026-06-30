@@ -112,11 +112,9 @@ canvas{max-height:180px}
 <script type="text/babel">
 const{useState,useEffect,useRef,useCallback}=React;
 
-// ── Google Calendar color map ────────────────────────────────────
 const GC={1:'#a855f7',2:'#22c55e',3:'#a855f7',4:'#f472b6',5:'#eab308',6:'#f97316',7:'#3b82f6',8:'#6b7280',9:'#6366f1',10:'#16a34a',11:'#6366f1',d:'#6366f1'};
 const gc=id=>GC[id]||GC.d;
 
-// ── Real events from Google Calendar ────────────────────────────
 const GCAL_EVENTS=[
   {id:"0937_628",summary:"Academia",start:"2026-06-28T19:00:00-03:00",end:"2026-06-28T20:00:00-03:00",colorId:"11"},
   {id:"6e0c_629",summary:"Ouribank",start:"2026-06-29T09:00:00-03:00",end:"2026-06-29T16:00:00-03:00",colorId:"6"},
@@ -154,7 +152,6 @@ function fmtT(s){if(!s||s.length===10)return'Dia todo';const d=new Date(s);retur
 function sameDay(a,b){return a.getFullYear()===b.getFullYear()&&a.getMonth()===b.getMonth()&&a.getDate()===b.getDate()}
 function evDay(day){return GCAL_EVENTS.filter(e=>sameDay(new Date(e.start),day)).sort((a,b)=>new Date(a.start)-new Date(b.start))}
 
-// ── WHOOP helpers ────────────────────────────────────────────────
 function getTokens(){try{return JSON.parse(localStorage.getItem('whoop_tokens'))||null}catch{return null}}
 function saveTokens(t){try{localStorage.setItem('whoop_tokens',JSON.stringify(t))}catch{}}
 function clearTokens(){try{localStorage.removeItem('whoop_tokens')}catch{}}
@@ -172,7 +169,6 @@ function scoreLabel(v){
   return'Baixo';
 }
 
-// ── Chart components ─────────────────────────────────────────────
 function LineChart({data:d,color,labels,yLabel}){
   const ref=useRef(null),ch=useRef(null);
   useEffect(()=>{
@@ -207,7 +203,6 @@ function Donut({pct,color,size=72,stroke=6}){
   );
 }
 
-// ── WHOOP connection panel ───────────────────────────────────────
 function WhoopConnect(){
   return(
     <div className="whoop-card">
@@ -226,33 +221,27 @@ function WhoopConnect(){
   );
 }
 
-// ── WHOOP metrics display ────────────────────────────────────────
 function WhoopMetrics({whoop}){
   if(!whoop)return <WhoopConnect/>;
-
   const{loading,error,data}=whoop;
-
   if(loading)return(
     <div style={{textAlign:'center',padding:'32px 0'}}>
       <div className="spin" style={{marginBottom:12}}/>
       <div style={{fontSize:12,color:'var(--t3)'}}>Carregando dados WHOOP…</div>
     </div>
   );
-
   if(error||!data)return(
     <div style={{textAlign:'center',padding:'24px 0'}}>
       <div style={{fontSize:13,color:'var(--red)',marginBottom:12}}>{error||'Erro ao carregar WHOOP'}</div>
-      <button onClick={()=>clearTokens()&&window.location.reload()} style={{background:'var(--s2)',border:'1px solid var(--b)',borderRadius:6,color:'var(--t)',padding:'6px 14px',cursor:'pointer',fontSize:12}}>Reconectar</button>
+      <button onClick={()=>{clearTokens();window.location.reload()}} style={{background:'var(--s2)',border:'1px solid var(--b)',borderRadius:6,color:'var(--t)',padding:'6px 14px',cursor:'pointer',fontSize:12}}>Reconectar</button>
     </div>
   );
 
-  // Parse WHOOP data
   const cycles=data.cycles?.records||[];
   const latest_cycle=cycles[0];
   const body=data.body;
   const profile=data.profile;
 
-  // Cycle base metrics
   const strain=latest_cycle?.score?.strain??null;
   const avg_hr=latest_cycle?.score?.average_heart_rate??null;
   const max_hr=latest_cycle?.score?.max_heart_rate??null;
@@ -262,7 +251,6 @@ function WhoopMetrics({whoop}){
   const height_m=body?.height_meter??null;
   const max_hr_body=body?.max_heart_rate??null;
 
-  // Recovery data (from /cycle/{id}/recovery endpoint)
   const cr=data.cycle_recovery;
   const recovery_score=cr?.score?.recovery_score??null;
   const hrv=cr?.score?.hrv_rmssd_milli??null;
@@ -270,7 +258,6 @@ function WhoopMetrics({whoop}){
   const spo2=cr?.score?.spo2_percentage??null;
   const skin_temp=cr?.score?.skin_temp_celsius??null;
 
-  // Sleep data (from /sleep endpoint)
   const sleepRec=data.sleep?.records?.[0];
   const sleep_perf=sleepRec?.score?.sleep_performance_percentage??null;
   const sleep_ms=sleepRec?.score?.stage_summary?.total_in_bed_time_milli??null;
@@ -280,10 +267,8 @@ function WhoopMetrics({whoop}){
   const light_ms=sleepRec?.score?.stage_summary?.total_light_sleep_time_milli??0;
   const total_sleep_ms=(rem_ms+deep_ms+light_ms)||1;
 
-  // Workouts (from /workout endpoint)
   const workouts=data.workouts?.records||[];
 
-  // 30d history
   const strain30=[...cycles].reverse().map(c=>c.score?.strain??null).filter(v=>v!==null);
   const hr30=[...cycles].reverse().map(c=>c.score?.average_heart_rate??null).filter(v=>v!==null);
   const kcal30=[...cycles].reverse().map(c=>c.score?.kilojoule?Math.round(c.score.kilojoule/4.184):null).filter(v=>v!==null);
@@ -295,7 +280,6 @@ function WhoopMetrics({whoop}){
 
   return(
     <div>
-      {/* Top metrics: Recovery Score, HRV, RHR, Strain */}
       <div className="g g4" style={{marginBottom:14}}>
         {[
           {l:'Recovery Score',v:recovery_score!==null?Math.round(recovery_score)+'%':'–',c:scoreColor(recovery_score),sub:recovery_score!==null?scoreLabel(recovery_score):'Aguardando'},
@@ -311,7 +295,6 @@ function WhoopMetrics({whoop}){
         ))}
       </div>
 
-      {/* Recovery + Sleep row */}
       <div className="g g2" style={{marginBottom:14}}>
         <div className="card">
           <div className="ct">Recovery</div>
@@ -333,7 +316,6 @@ function WhoopMetrics({whoop}){
             </div>
           </div>
         </div>
-
         <div className="card">
           <div className="ct">Sono</div>
           <div style={{display:'flex',alignItems:'center',gap:18,marginBottom:10}}>
@@ -345,11 +327,7 @@ function WhoopMetrics({whoop}){
             </div>
             <div style={{flex:1}}>
               <div style={{fontSize:13,fontWeight:600,marginBottom:10,color:'var(--t)'}}>{sleep_hrs!==null?sleep_hrs+'h no leito':'– h no leito'}</div>
-              {[
-                ['REM',rem_ms,'#a855f7'],
-                ['Profundo',deep_ms,'#3b82f6'],
-                ['Leve',light_ms,'#6366f1'],
-              ].map(([l,ms,c])=>(
+              {[['REM',rem_ms,'#a855f7'],['Profundo',deep_ms,'#3b82f6'],['Leve',light_ms,'#6366f1']].map(([l,ms,c])=>(
                 <div key={l} style={{marginBottom:6}}>
                   <div style={{display:'flex',justifyContent:'space-between',marginBottom:2}}>
                     <span style={{fontSize:10,color:'var(--t3)'}}>{l}</span>
@@ -364,7 +342,6 @@ function WhoopMetrics({whoop}){
       </div>
 
       <div className="g g2" style={{marginBottom:14}}>
-        {/* Body metrics */}
         <div className="card">
           <div className="ct">Corpo & Perfil</div>
           {profile&&(
@@ -377,12 +354,7 @@ function WhoopMetrics({whoop}){
             </div>
           )}
           <div className="g g2" style={{gap:8}}>
-            {[
-              ['Peso',weight_kg!==null?weight_kg.toFixed(1)+' kg':'–','#6366f1'],
-              ['Altura',height_m!=null?(height_m*100).toFixed(0)+' cm':'–','var(--t)'],
-              ['FC máx (corpo)',max_hr_body?max_hr_body+' bpm':'–','#ef4444'],
-              ['Strain hoje',strain!==null?Math.round(strain*10)/10:'–','#f97316'],
-            ].map(([l,v,c])=>(
+            {[['Peso',weight_kg!==null?weight_kg.toFixed(1)+' kg':'–','#6366f1'],['Altura',height_m!=null?(height_m*100).toFixed(0)+' cm':'–','var(--t)'],['FC máx (corpo)',max_hr_body?max_hr_body+' bpm':'–','#ef4444'],['Strain hoje',strain!==null?Math.round(strain*10)/10:'–','#f97316']].map(([l,v,c])=>(
               <div key={l} style={{background:'var(--s2)',borderRadius:'var(--rs)',padding:'9px 11px'}}>
                 <div style={{fontSize:10,color:'var(--t3)',marginBottom:2}}>{l}</div>
                 <div style={{fontSize:14,fontWeight:700,color:c}}>{v}</div>
@@ -390,8 +362,6 @@ function WhoopMetrics({whoop}){
             ))}
           </div>
         </div>
-
-        {/* Last 7 cycles */}
         <div className="card">
           <div className="ct">Últimos 7 dias — Strain</div>
           <div style={{display:'flex',gap:4,alignItems:'flex-end',height:80,marginBottom:8}}>
@@ -416,7 +386,6 @@ function WhoopMetrics({whoop}){
         </div>
       </div>
 
-      {/* Workouts recentes */}
       {workouts.length>0&&(
         <div className="card" style={{marginBottom:14}}>
           <div className="ct">Treinos recentes</div>
@@ -428,36 +397,26 @@ function WhoopMetrics({whoop}){
                 <div style={{fontSize:11,color:'var(--t3)',marginTop:1}}>{new Date(w.start).toLocaleDateString('pt-BR',{weekday:'short',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}</div>
               </div>
               <div style={{display:'flex',gap:14,textAlign:'right'}}>
-                <div>
-                  <div style={{fontSize:13,fontWeight:700,color:'#f97316'}}>{w.score?.strain?Math.round(w.score.strain*10)/10:'–'}</div>
-                  <div style={{fontSize:10,color:'var(--t3)'}}>strain</div>
-                </div>
-                <div>
-                  <div style={{fontSize:13,fontWeight:700}}>{w.score?.kilojoule?Math.round(w.score.kilojoule/4.184):'–'}</div>
-                  <div style={{fontSize:10,color:'var(--t3)'}}>kcal</div>
-                </div>
+                <div><div style={{fontSize:13,fontWeight:700,color:'#f97316'}}>{w.score?.strain?Math.round(w.score.strain*10)/10:'–'}</div><div style={{fontSize:10,color:'var(--t3)'}}>strain</div></div>
+                <div><div style={{fontSize:13,fontWeight:700}}>{w.score?.kilojoule?Math.round(w.score.kilojoule/4.184):'–'}</div><div style={{fontSize:10,color:'var(--t3)'}}>kcal</div></div>
               </div>
             </div>
           ))}
         </div>
       )}
 
-      {/* Recovery + HRV 30d charts */}
       {recovery30.length>1&&(
         <div className="g g2" style={{marginBottom:14}}>
           <div className="card"><div className="ct">Recovery Score 30d (%)</div><LineChart data={recovery30} color="#22c55e"/></div>
           <div className="card"><div className="ct">HRV 30d (ms)</div><LineChart data={hrv30} color="#a855f7"/></div>
         </div>
       )}
-
-      {/* Strain + Sono 30d charts */}
       {strain30.length>1&&(
         <div className="g g2" style={{marginBottom:14}}>
           <div className="card"><div className="ct">Strain 30d</div><LineChart data={strain30} color="#f97316"/></div>
           <div className="card"><div className="ct">{sleep30.length>1?'Sono 30d (%)':'Calorias 30d (kcal)'}</div><LineChart data={sleep30.length>1?sleep30:kcal30} color={sleep30.length>1?'#3b82f6':'#a855f7'}/></div>
         </div>
       )}
-
       {hr30.length>1&&(
         <div className="g g2" style={{marginBottom:14}}>
           <div className="card"><div className="ct">FC média 30d (bpm)</div><LineChart data={hr30} color="#3b82f6"/></div>
@@ -483,7 +442,6 @@ function WhoopMetrics({whoop}){
   );
 }
 
-// ── Static data ──────────────────────────────────────────────────
 const CHECKLIST_DEFAULT=[
   {id:1,text:'Academia',done:true,tag:'fitness',bc:'p-'},
   {id:2,text:'Mincha',done:true,tag:'tefila',bc:'b-'},
@@ -514,40 +472,30 @@ const GOALS=[
   {name:'Ler 24 livros',cat:'Mente',target:'24',current:'11',pct:46,deadline:'Dez 2026',color:'#3b82f6'},
 ];
 
-// ═══════════════════════════════════════════════════════════════
-// PAGES
-// ═══════════════════════════════════════════════════════════════
 function DashboardPage({checks,setChecks,whoop}){
   const TODAY=new Date();
   const todayEvs=evDay(TODAY);
   const done=checks.filter(c=>c.done).length;
   const tokens=getTokens();
-
-  // Derive WHOOP quick metrics
   const lc=whoop?.data?.cycles?.records?.[0];
   const strain=lc?.score?.strain??null;
   const avg_hr=lc?.score?.average_heart_rate??null;
   const max_hr=lc?.score?.max_heart_rate??null;
   const kcal=lc?.score?.kilojoule?Math.round(lc.score.kilojoule/4.184):null;
   const weightKg=whoop?.data?.body?.weight_kilogram??null;
-
-  // Recovery, HRV, RHR, Sleep from new endpoints
   const cr=whoop?.data?.cycle_recovery;
   const recovery_score=cr?.score?.recovery_score??null;
   const hrv=cr?.score?.hrv_rmssd_milli??null;
   const rhr=cr?.score?.resting_heart_rate??null;
   const sleepRec=whoop?.data?.sleep?.records?.[0];
   const sleep_perf=sleepRec?.score?.sleep_performance_percentage??null;
-
   const metricsRow=[
     {l:'Recovery',v:recovery_score!==null?Math.round(recovery_score)+'%':'–',c:scoreColor(recovery_score),src:tokens?'whoop':'mock'},
     {l:'HRV',v:hrv!==null?Math.round(hrv)+' ms':'–',c:'#a855f7',src:tokens?'whoop':'mock'},
     {l:'RHR',v:rhr!==null?rhr+' bpm':'–',c:'#3b82f6',src:tokens?'whoop':'mock'},
     {l:'Strain',v:strain!==null?Math.round(strain*10)/10:'–',c:strain?scoreColor(Math.min(strain/21*100,100)):'#444',src:tokens?'whoop':'mock'},
   ];
-
   const dateStr=TODAY.toLocaleDateString('pt-BR',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
-
   return(
     <div className="page">
       <div className="ph">
@@ -557,21 +505,17 @@ function DashboardPage({checks,setChecks,whoop}){
         </div>
         <div className="ps" style={{textTransform:'capitalize'}}>{dateStr}</div>
       </div>
-
       <div className="g g4" style={{marginBottom:14}}>
         {metricsRow.map(m=>(
           <div key={m.l} className="card">
             <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10}}>
               <div className="ct" style={{marginBottom:0}}>{m.l}</div>
-              {m.src==='whoop'
-                ? <div className="live" style={{fontSize:9,padding:'2px 5px'}}>WHOOP</div>
-                : <div className="badge z-" style={{fontSize:9}}>mock</div>}
+              {m.src==='whoop'?<div className="live" style={{fontSize:9,padding:'2px 5px'}}>WHOOP</div>:<div className="badge z-" style={{fontSize:9}}>mock</div>}
             </div>
             <div className="mv" style={{color:m.c}}>{m.v}</div>
           </div>
         ))}
       </div>
-
       <div className="g g2" style={{marginBottom:14}}>
         <div className="card">
           <div style={{display:'flex',justifyContent:'space-between',marginBottom:12}}>
@@ -589,31 +533,23 @@ function DashboardPage({checks,setChecks,whoop}){
             </div>
           ))}
         </div>
-
         <div style={{display:'flex',flexDirection:'column',gap:14}}>
-          {/* WHOOP quick panel or connect prompt */}
-          {!tokens
-            ? <WhoopConnect/>
-            : <div className="card" style={{background:'linear-gradient(135deg,rgba(99,102,241,.1),rgba(168,85,247,.07))',borderColor:'rgba(99,102,241,.2)'}}>
-                <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}}>
-                  <div className="whoop-logo" style={{fontSize:16,marginBottom:0}}>WHOOP</div>
-                  <div className="live">Ao vivo</div>
-                </div>
-                <div className="g g3" style={{gap:8}}>
-                  {[
-                    ['Recovery',recovery_score!==null?Math.round(recovery_score)+'%':'–',scoreColor(recovery_score)],
-                    ['Strain',strain!==null?Math.round(strain*10)/10:'–','#f97316'],
-                    ['Sono',sleep_perf!==null?Math.round(sleep_perf)+'%':'–','#3b82f6'],
-                  ].map(([l,v,c])=>(
-                    <div key={l} style={{background:'rgba(0,0,0,.3)',borderRadius:'var(--rs)',padding:'8px 10px',textAlign:'center'}}>
-                      <div style={{fontSize:16,fontWeight:800,color:c}}>{v}</div>
-                      <div style={{fontSize:10,color:'var(--t3)',marginTop:2}}>{l}</div>
-                    </div>
-                  ))}
-                </div>
+          {!tokens?<WhoopConnect/>:(
+            <div className="card" style={{background:'linear-gradient(135deg,rgba(99,102,241,.1),rgba(168,85,247,.07))',borderColor:'rgba(99,102,241,.2)'}}>
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}}>
+                <div className="whoop-logo" style={{fontSize:16,marginBottom:0}}>WHOOP</div>
+                <div className="live">Ao vivo</div>
               </div>
-          }
-
+              <div className="g g3" style={{gap:8}}>
+                {[['Recovery',recovery_score!==null?Math.round(recovery_score)+'%':'–',scoreColor(recovery_score)],['Strain',strain!==null?Math.round(strain*10)/10:'–','#f97316'],['Sono',sleep_perf!==null?Math.round(sleep_perf)+'%':'–','#3b82f6']].map(([l,v,c])=>(
+                  <div key={l} style={{background:'rgba(0,0,0,.3)',borderRadius:'var(--rs)',padding:'8px 10px',textAlign:'center'}}>
+                    <div style={{fontSize:16,fontWeight:800,color:c}}>{v}</div>
+                    <div style={{fontSize:10,color:'var(--t3)',marginTop:2}}>{l}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           <div className="card">
             <div className="ct">Metas da semana</div>
             {WEEK_GOALS.map(g=>(
@@ -628,45 +564,31 @@ function DashboardPage({checks,setChecks,whoop}){
           </div>
         </div>
       </div>
-
       <div className="g g2">
         <div className="card">
           <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:14}}>
             <div className="ct" style={{marginBottom:0}}>Eventos de hoje</div>
             <div className="live">Google Calendar</div>
           </div>
-          {todayEvs.length===0
-            ? <div style={{color:'var(--t3)',fontSize:13}}>Sem eventos hoje</div>
-            : todayEvs.map((e,i)=>(
-              <div key={i} className="ev">
-                <div className="evt">{fmtT(e.start)}</div>
-                <div className="evb" style={{background:gc(e.colorId)}}/>
-                <div><div style={{fontSize:13,fontWeight:500}}>{e.summary}</div><div style={{fontSize:11,color:'var(--t3)',marginTop:1}}>{fmtT(e.start)} – {fmtT(e.end)}</div></div>
-              </div>
-            ))}
+          {todayEvs.length===0?<div style={{color:'var(--t3)',fontSize:13}}>Sem eventos hoje</div>:todayEvs.map((e,i)=>(
+            <div key={i} className="ev">
+              <div className="evt">{fmtT(e.start)}</div>
+              <div className="evb" style={{background:gc(e.colorId)}}/>
+              <div><div style={{fontSize:13,fontWeight:500}}>{e.summary}</div><div style={{fontSize:11,color:'var(--t3)',marginTop:1}}>{fmtT(e.start)} – {fmtT(e.end)}</div></div>
+            </div>
+          ))}
         </div>
-
         <div className="card">
           <div className="ct">Dados de hoje</div>
           <div style={{display:'flex',gap:16,alignItems:'center',marginBottom:14}}>
             <div style={{position:'relative',flexShrink:0}}>
               <Donut pct={recovery_score!==null?recovery_score:strain?Math.min(strain/21*100,100):0} color={recovery_score!==null?scoreColor(recovery_score):'#f97316'}/>
               <div style={{position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center',flexDirection:'column'}}>
-                {recovery_score!==null
-                  ? <><div style={{fontSize:12,fontWeight:800,color:scoreColor(recovery_score)}}>{Math.round(recovery_score)}%</div><div style={{fontSize:8,color:'var(--t3)'}}>recovery</div></>
-                  : <><div style={{fontSize:14,fontWeight:800,color:'#f97316'}}>{strain?Math.round(strain*10)/10:'–'}</div><div style={{fontSize:8,color:'var(--t3)'}}>strain</div></>
-                }
+                {recovery_score!==null?<><div style={{fontSize:12,fontWeight:800,color:scoreColor(recovery_score)}}>{Math.round(recovery_score)}%</div><div style={{fontSize:8,color:'var(--t3)'}}>recovery</div></>:<><div style={{fontSize:14,fontWeight:800,color:'#f97316'}}>{strain?Math.round(strain*10)/10:'–'}</div><div style={{fontSize:8,color:'var(--t3)'}}>strain</div></>}
               </div>
             </div>
             <div style={{flex:1}}>
-              {[
-                ['Recovery',recovery_score!==null?Math.round(recovery_score)+'%':'–',scoreColor(recovery_score)],
-                ['HRV',hrv!==null?Math.round(hrv)+' ms':'–','#a855f7'],
-                ['RHR',rhr!==null?rhr+' bpm':'–','#3b82f6'],
-                ['Sono',sleep_perf!==null?Math.round(sleep_perf)+'%':'–','#3b82f6'],
-                ['Peso',weightKg?weightKg.toFixed(1)+' kg':'–','#6366f1'],
-                ['Strain',strain?Math.round(strain*10)/10:'–','#f97316'],
-              ].map(([l,v,c])=>(
+              {[['Recovery',recovery_score!==null?Math.round(recovery_score)+'%':'–',scoreColor(recovery_score)],['HRV',hrv!==null?Math.round(hrv)+' ms':'–','#a855f7'],['RHR',rhr!==null?rhr+' bpm':'–','#3b82f6'],['Sono',sleep_perf!==null?Math.round(sleep_perf)+'%':'–','#3b82f6'],['Peso',weightKg?weightKg.toFixed(1)+' kg':'–','#6366f1'],['Strain',strain?Math.round(strain*10)/10:'–','#f97316']].map(([l,v,c])=>(
                 <div key={l} style={{display:'flex',justifyContent:'space-between',marginBottom:5}}>
                   <span style={{fontSize:11,color:'var(--t2)'}}>{l}</span>
                   <span style={{fontSize:11,fontWeight:700,color:c}}>{v}</span>
@@ -686,17 +608,12 @@ function FitnessPage({whoop}){
   const wh=()=>{
     const wHistory=[84.8,84.5,84.2,83.9,84.1,83.8,83.5,83.7,83.4,83.2,83.0,83.2];
     const fHistory=[19.8,19.6,19.4,19.2,19.3,19.1,18.9,19.0,18.7,18.5,18.3,18.3];
-    return(
-      <div className="g g2" style={{marginBottom:14}}>
-        <div className="card"><div className="ct">Peso (kg) — mock</div><LineChart data={wHistory} color="#6366f1"/></div>
-        <div className="card"><div className="ct">Gordura corporal (%) — mock</div><LineChart data={fHistory} color="#a855f7"/></div>
-      </div>
-    );
+    return(<div className="g g2" style={{marginBottom:14}}><div className="card"><div className="ct">Peso (kg) — mock</div><LineChart data={wHistory} color="#6366f1"/></div><div className="card"><div className="ct">Gordura corporal (%) — mock</div><LineChart data={fHistory} color="#a855f7"/></div></div>);
   };
   return(
     <div className="page">
       <div className="ph"><div className="pt">Fitness</div><div className="ps">Corpo, treinos e dados WHOOP</div></div>
-      {tokens ? <WhoopMetrics whoop={whoop}/> : <><WhoopConnect/><div style={{marginTop:16}}>{wh()}</div></>}
+      {tokens?<WhoopMetrics whoop={whoop}/>:<><WhoopConnect/><div style={{marginTop:16}}>{wh()}</div></>}
     </div>
   );
 }
@@ -858,9 +775,6 @@ function GoalsPage(){
   );
 }
 
-// ═══════════════════════════════════════════════════════════════
-// ROOT APP
-// ═══════════════════════════════════════════════════════════════
 const PAGES={
   dashboard:{label:'Dashboard',ico:'◈',comp:DashboardPage},
   fitness:{label:'Fitness',ico:'◉',comp:FitnessPage},
@@ -874,30 +788,21 @@ function App(){
   const[checks,setChecks]=useState(CHECKLIST_DEFAULT);
   const[whoop,setWhoop]=useState({loading:false,data:null,error:null});
 
-  // Listen for WHOOP OAuth popup result
   useEffect(()=>{
     function onMsg(e){
-      if(e.data?.type==='WHOOP_AUTH_SUCCESS'){
-        saveTokens(e.data.tokens);
-        fetchWhoop(e.data.tokens.access_token);
-      }
+      if(e.data?.type==='WHOOP_AUTH_SUCCESS'){saveTokens(e.data.tokens);fetchWhoop(e.data.tokens.access_token);}
     }
     window.addEventListener('message',onMsg);
     return()=>window.removeEventListener('message',onMsg);
   },[]);
 
-  // Auto-load if token exists
   useEffect(()=>{
     const t=getTokens();
     if(t?.access_token)fetchWhoop(t.access_token);
   },[]);
 
-  // Auto-refresh token every 55 minutes
   useEffect(()=>{
-    const interval=setInterval(()=>{
-      const t=getTokens();
-      if(t?.access_token)fetchWhoop(t.access_token);
-    },55*60*1000);
+    const interval=setInterval(()=>{const t=getTokens();if(t?.access_token)fetchWhoop(t.access_token);},55*60*1000);
     return()=>clearInterval(interval);
   },[]);
 
@@ -905,25 +810,13 @@ function App(){
     setWhoop(s=>({...s,loading:true,error:null}));
     try{
       const stored=getTokens();
-      const headers={
-        'Authorization':'Bearer '+token,
-        'Content-Type':'application/json',
-      };
-      if(stored?.refresh_token){
-        headers['X-Refresh-Token']=stored.refresh_token;
-      }
+      const headers={'Authorization':'Bearer '+token,'Content-Type':'application/json'};
+      if(stored?.refresh_token)headers['X-Refresh-Token']=stored.refresh_token;
       const r=await fetch('/whoop/data',{headers});
       if(!r.ok)throw new Error('HTTP '+r.status);
       const data=await r.json();
-      // If server refreshed the token, save new tokens
       if(data._new_tokens?.access_token){
-        saveTokens({
-          access_token:data._new_tokens.access_token,
-          refresh_token:data._new_tokens.refresh_token||stored?.refresh_token,
-          expires_in:data._new_tokens.expires_in||3600,
-          scope:stored?.scope||'',
-          saved_at:Date.now(),
-        });
+        saveTokens({access_token:data._new_tokens.access_token,refresh_token:data._new_tokens.refresh_token||stored?.refresh_token,expires_in:data._new_tokens.expires_in||3600,scope:stored?.scope||'',saved_at:Date.now()});
       }
       setWhoop({loading:false,data,error:null});
     }catch(err){
@@ -957,9 +850,7 @@ function App(){
         <div className="ni" style={{cursor:tokens?'default':'pointer'}} onClick={()=>!tokens&&window.open('/whoop/login','_blank','width=520,height=660')}>
           <div className="dot" style={{background:tokens?'#22c55e':'var(--t3)'}}/>
           WHOOP
-          {tokens
-            ? <div className="badge g-" style={{marginLeft:'auto',fontSize:9}}>Ativo</div>
-            : <div className="badge y-" style={{marginLeft:'auto',fontSize:9}}>Conectar</div>}
+          {tokens?<div className="badge g-" style={{marginLeft:'auto',fontSize:9}}>Ativo</div>:<div className="badge y-" style={{marginLeft:'auto',fontSize:9}}>Conectar</div>}
         </div>
         <div className="sbot">
           {tokens&&(
