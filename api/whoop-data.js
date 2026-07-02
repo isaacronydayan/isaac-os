@@ -1,4 +1,5 @@
-const BASE = 'https://api.prod.whoop.com/developer/v1';
+// WHOOP Developer API — v2 (v1 foi desligada em Out/2025)
+const BASE = 'https://api.prod.whoop.com/developer';
 
 async function get(path, token) {
   const res = await fetch(`${BASE}${path}`, {
@@ -7,6 +8,17 @@ async function get(path, token) {
   const text = await res.text();
   try { return { ok: res.ok, status: res.status, data: JSON.parse(text) }; }
   catch { return { ok: res.ok, status: res.status, data: text }; }
+}
+
+// Tenta v2 primeiro; se falhar (4xx/5xx), tenta o path v1 equivalente
+async function getV(pathV2, pathV1, token) {
+  const r2 = await get(pathV2, token);
+  if (r2.ok) return r2;
+  if (pathV1) {
+    const r1 = await get(pathV1, token);
+    if (r1.ok) return r1;
+  }
+  return r2; // devolve o erro do v2 para debug
 }
 
 async function refreshToken(refresh_token) {
@@ -35,7 +47,7 @@ export default async function handler(req, res) {
   const refresh = req.headers['x-refresh-token'];
   if (!token) return res.status(401).json({ error: 'Missing token' });
 
-  // Refresh token first for fresh data
+  // Renova o token primeiro para garantir dados frescos
   let newTokens = null;
   if (refresh) {
     const refreshed = await refreshToken(refresh);
@@ -45,14 +57,13 @@ export default async function handler(req, res) {
     }
   }
 
-  // Step 1: fetch base data in parallel — correct endpoints without /activity/
   const [profileRes, cyclesRes, recoveryRes, sleepRes, workoutRes, bodyRes] = await Promise.allSettled([
-    get('/user/profile/basic', token),
-    get('/cycle?limit=25', token),
-    get('/recovery?limit=25', token),        // correct: /recovery not /activity/recovery
-    get('/sleep?limit=25', token),            // correct: /sleep not /activity/sleep
-    get('/workout?limit=10', token),          // correct: /workout not /activity/workout
-    get('/user/measurement/body', token),
+    getV('/v2/user/profile/basic',    '/v1/user/profile/basic',    token),
+    getV('/v2/cycle?limit=25',        '/v1/cycle?limit=25',        token),
+    getV('/v2/recovery?limit=25',     '/v1/recovery?limit=25',     token),
+    getV('/v2/activity/sleep?limit=25',   '/v1/sleep?limit=25',    token),
+    getV('/v2/activity/workout?limit=25', '/v1/workout?limit=10',  token),
+    getV('/v2/user/measurement/body', '/v1/user/measurement/body', token),
   ]);
 
   const safe = (p) => {
@@ -65,28 +76,30 @@ export default async function handler(req, res) {
 
   const cycles = safe(cyclesRes);
 
-  // Step 2: if we have cycles, get recovery for the latest cycle by ID
+  // Recovery do ciclo mais recente (recovery de HOJE)
   let cycleRecovery = null;
   if (cycles?.records?.length > 0) {
     const latestCycleId = cycles.records[0].id;
-    const crRes = await get(`/cycle/${latestCycleId}/recovery`, token);
+    const crRes = await getV(`/v2/cycle/${latestCycleId}/recovery`, `/v1/cycle/${latestCycleId}/recovery`, token);
     if (crRes.ok) cycleRecovery = crRes.data;
+  }
 
-    // Also get sleep for latest cycle
-    const csRes = await get(`/cycle/${latestCycleId}/sleep`, token);
-    if (csRes.ok && !cycleRecovery?.sleep) {
-      // attach sleep to cycle recovery if available
-    }
+  // Fallback: se o recovery por ciclo falhar, usa o registro mais recente da coleção
+  const recovery = safe(recoveryRes);
+  if (!cycleRecovery?.score && recovery?.records?.length > 0) {
+    const scored = recovery.records.find(r => r.score);
+    if (scored) cycleRecovery = scored;
   }
 
   return res.status(200).json({
     _new_tokens: newTokens,
-    profile:       safe(profileRes),
+    _fetched_at: new Date().toISOString(),
+    profile:        safe(profileRes),
     cycles,
-    recovery:      safe(recoveryRes),
-    cycle_recovery: cycleRecovery,   // recovery for latest cycle specifically
-    sleep:         safe(sleepRes),
-    workouts:      safe(workoutRes),
-    body:          safe(bodyRes),
+    recovery,
+    cycle_recovery: cycleRecovery,
+    sleep:          safe(sleepRes),
+    workouts:       safe(workoutRes),
+    body:           safe(bodyRes),
   });
 }
