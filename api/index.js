@@ -27,7 +27,7 @@ const HTML = `<!DOCTYPE html>
   --blue:#3b82f6;--bbg:rgba(59,130,246,.1);
   --purple:#a855f7;--pbg:rgba(168,85,247,.1);
   --orange:#f97316;--obg:rgba(249,115,22,.1);
-  --r:12px;--rs:8px;--sb:224px;--fn:'Inter',system-ui,sans-serif
+  --r:14px;--rs:9px;--sb:224px;--fn:'Inter',system-ui,sans-serif
 }
 html,body,#root{height:100%;font-family:var(--fn);background:var(--bg);color:var(--t)}
 ::-webkit-scrollbar{width:3px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:var(--s3);border-radius:3px}
@@ -50,10 +50,10 @@ html,body,#root{height:100%;font-family:var(--fn);background:var(--bg);color:var
 .g2{grid-template-columns:1fr 1fr}
 .g3{grid-template-columns:1fr 1fr 1fr}
 .g4{grid-template-columns:1fr 1fr 1fr 1fr}
-.card{background:var(--surface);border:1px solid var(--b);border-radius:var(--r);padding:18px;transition:border-color .15s}
-.card:hover{border-color:var(--bh)}
+.card{background:linear-gradient(180deg,#131313,#0f0f0f);border:1px solid var(--b);border-radius:var(--r);padding:18px;transition:border-color .15s,box-shadow .15s}
+.card:hover{border-color:var(--bh);box-shadow:0 4px 24px rgba(0,0,0,.35)}
 .ct{font-size:11px;font-weight:600;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:13px}
-.mv{font-size:26px;font-weight:800;letter-spacing:-1px;line-height:1}
+.mv{font-size:26px;font-weight:800;letter-spacing:-1px;line-height:1;font-variant-numeric:tabular-nums}
 .mu{font-size:13px;font-weight:400;color:var(--t2);margin-left:2px}
 .badge{display:inline-flex;align-items:center;gap:3px;font-size:10.5px;font-weight:600;padding:2px 7px;border-radius:4px}
 .g-{background:var(--gbg);color:var(--green)}
@@ -92,6 +92,8 @@ html,body,#root{height:100%;font-family:var(--fn);background:var(--bg);color:var
 .hd{display:flex;gap:4px;flex:1}
 .hday{width:26px;height:26px;border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;background:var(--s2);color:var(--t3)}
 .hday.done{background:var(--accent);color:#fff}
+.hday:hover{outline:1px solid var(--bh)}
+.hday.tdy{box-shadow:inset 0 0 0 1.5px rgba(129,140,248,.55)}
 .hst{font-size:11px;font-weight:700;color:var(--amber);width:30px;text-align:right}
 .cg{display:grid;grid-template-columns:repeat(7,1fr);gap:3px}
 .ch{font-size:10px;font-weight:600;color:var(--t3);text-align:center;padding:3px 0}
@@ -157,7 +159,15 @@ const GCAL_EVENTS=[
 
 function fmtT(s){if(!s||s.length===10)return'Dia todo';const d=new Date(s);return d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}
 function sameDay(a,b){return a.getFullYear()===b.getFullYear()&&a.getMonth()===b.getMonth()&&a.getDate()===b.getDate()}
-function evDay(day){return GCAL_EVENTS.filter(e=>sameDay(new Date(e.start),day)).sort((a,b)=>new Date(a.start)-new Date(b.start))}
+let LIVE_EVENTS=null; // eventos ao vivo do Google Calendar (substituem os hardcoded quando conectado)
+function allEvents(){return (LIVE_EVENTS&&LIVE_EVENTS.length)?LIVE_EVENTS:GCAL_EVENTS}
+function evDay(day){return allEvents().filter(e=>sameDay(new Date(e.start),day)).sort((a,b)=>new Date(a.start)-new Date(b.start))}
+
+function getGoogleTokens(){try{return JSON.parse(localStorage.getItem('google_tokens'))||null}catch{return null}}
+function saveGoogleTokens(t){try{localStorage.setItem('google_tokens',JSON.stringify(t))}catch{}}
+function clearGoogleTokens(){try{localStorage.removeItem('google_tokens');localStorage.removeItem('google_cache')}catch{}}
+function getGoogleCache(){try{return JSON.parse(localStorage.getItem('google_cache'))||null}catch{return null}}
+function saveGoogleCache(data){try{localStorage.setItem('google_cache',JSON.stringify({data,at:Date.now()}))}catch{}}
 
 function getTokens(){try{return JSON.parse(localStorage.getItem('whoop_tokens'))||null}catch{return null}}
 function saveTokens(t){try{localStorage.setItem('whoop_tokens',JSON.stringify(t))}catch{}}
@@ -170,8 +180,16 @@ function pickSleep(data){
   const rs=data?.sleep?.records||[];
   return rs.find(r=>r.score&&!r.nap)||rs.find(r=>r.score)||rs[0]||null;
 }
-const SPORT_PT={'Weightlifting':'Musculação','Running':'Corrida','Walking':'Caminhada','Cycling':'Ciclismo','Swimming':'Natação','Functional Fitness':'Funcional','Basketball':'Basquete','Soccer':'Futebol','Football':'Futebol Americano','Tennis':'Tênis','Boxing':'Boxe','Hiking/Rucking':'Trilha','Activity':'Atividade','HIIT':'HIIT','Yoga':'Yoga','Pilates':'Pilates','Spin':'Spinning','Rowing':'Remo','Jiu Jitsu':'Jiu-Jitsu','Martial Arts':'Artes Marciais'};
-function sportName(w){const n=w?.sport_name;return (n&&(SPORT_PT[n]||n))||'Treino'}
+const SPORT_PT={'weightlifting':'Musculação','running':'Corrida','walking':'Caminhada','cycling':'Ciclismo','swimming':'Natação','functional fitness':'Funcional','basketball':'Basquete','soccer':'Futebol','football':'Futebol Americano','tennis':'Tênis','boxing':'Boxe','hiking/rucking':'Trilha','hiking':'Trilha','activity':'Atividade','hiit':'HIIT','yoga':'Yoga','pilates':'Pilates','spin':'Spinning','spinning':'Spinning','rowing':'Remo','jiu jitsu':'Jiu-Jitsu','martial arts':'Artes Marciais','stairmaster':'Escada','elliptical':'Elíptico','crossfit':'CrossFit'};
+const SPORT_ICO={'musculação':'🏋️','corrida':'🏃','caminhada':'🚶','ciclismo':'🚴','natação':'🏊','futebol':'⚽','basquete':'🏀','tênis':'🎾','boxe':'🥊','trilha':'🥾','yoga':'🧘','remo':'🚣','spinning':'🚴','jiu-jitsu':'🥋','artes marciais':'🥋','crossfit':'🏋️'};
+function sportName(w){
+  let n=(w?.sport_name||'').replace(/_msk$/i,'').replace(/_/g,' ').trim();
+  if(!n)return'Treino';
+  const key=n.toLowerCase();
+  return SPORT_PT[key]||n.charAt(0).toUpperCase()+n.slice(1);
+}
+function sportIcon(w){return SPORT_ICO[sportName(w).toLowerCase()]||'🏋️'}
+function greeting(){const h=new Date().getHours();if(h<6)return'Boa madrugada';if(h<12)return'Bom dia';if(h<18)return'Boa tarde';return'Boa noite'}
 function timeAgo(ts){
   if(!ts)return'';
   const m=Math.floor((Date.now()-ts)/60000);
@@ -417,7 +435,7 @@ function WhoopMetrics({whoop}){
           <div className="ct">Treinos recentes</div>
           {workouts.slice(0,5).map((w,i)=>(
             <div key={i} style={{display:'flex',alignItems:'center',gap:12,padding:'9px 0',borderBottom:i<Math.min(workouts.length,5)-1?'1px solid var(--b)':'none'}}>
-              <div style={{width:36,height:36,borderRadius:'var(--rs)',background:'var(--pbg)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:18,flexShrink:0}}>🏋️</div>
+              <div style={{width:36,height:36,borderRadius:'var(--rs)',background:'var(--pbg)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:18,flexShrink:0}}>{sportIcon(w)}</div>
               <div style={{flex:1}}>
                 <div style={{fontSize:13,fontWeight:600}}>{sportName(w)}</div>
                 <div style={{fontSize:11,color:'var(--t3)',marginTop:1}}>{new Date(w.start).toLocaleDateString('pt-BR',{weekday:'short',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}</div>
@@ -498,7 +516,16 @@ const GOALS=[
   {name:'Ler 24 livros',cat:'Mente',target:'24',current:'11',pct:46,deadline:'Dez 2026',color:'#3b82f6'},
 ];
 
-function DashboardPage({checks,setChecks,whoop}){
+function DashboardPage({checks,setChecks,whoop,google,toggleTask}){
+  const gtokens=getGoogleTokens();
+  const gtasks=(google?.data?.tasks||[]).slice().sort((a,b)=>{
+    if(a.done!==b.done)return a.done?1:-1;
+    if(a.due&&b.due)return new Date(a.due)-new Date(b.due);
+    if(a.due)return -1;
+    if(b.due)return 1;
+    return 0;
+  });
+  const useGTasks=gtokens&&gtasks.length>0;
   const TODAY=new Date();
   const todayEvs=evDay(TODAY);
   const done=checks.filter(c=>c.done).length;
@@ -526,8 +553,8 @@ function DashboardPage({checks,setChecks,whoop}){
     <div className="page">
       <div className="ph">
         <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:3}}>
-          <div className="pt">Shalom, Isaac 👋</div>
-          {tokens&&<div className="live">WHOOP + Google Calendar</div>}
+          <div className="pt">{greeting()}, Isaac 👋</div>
+          {(tokens||gtokens)&&<div className="live">{[tokens&&'WHOOP',gtokens&&'Google'].filter(Boolean).join(' + ')}</div>}
           {tokens&&whoop&&<button className="refresh-btn" onClick={whoop.onRefresh} disabled={whoop.loading}>{whoop.loading?'Atualizando…':'↻ '+(whoop.updatedAt?timeAgo(whoop.updatedAt):'Atualizar')}</button>}
         </div>
         <div className="ps" style={{textTransform:'capitalize'}}>{dateStr}</div>
@@ -545,20 +572,49 @@ function DashboardPage({checks,setChecks,whoop}){
       </div>
       <div className="g g2" style={{marginBottom:14}}>
         <div className="card">
-          <div style={{display:'flex',justifyContent:'space-between',marginBottom:12}}>
-            <div className="ct" style={{marginBottom:0}}>Checklist do dia</div>
-            <div style={{fontSize:11,color:'var(--t2)'}}>{done}/{checks.length}</div>
-          </div>
-          <div className="pbar" style={{marginBottom:14}}><div className="pf" style={{width:(done/checks.length*100)+'%',background:'var(--accent)'}}/></div>
-          {checks.map(c=>(
-            <div key={c.id} className="ci" onClick={()=>setChecks(p=>p.map(x=>x.id===c.id?{...x,done:!x.done}:x))}>
-              <div className={\`cb \${c.done?'done':''}\`}>
-                {c.done&&<svg width="9" height="7" viewBox="0 0 9 7"><path d="M1 3.5l2.5 2.5 4.5-5" stroke="#fff" strokeWidth="1.7" fill="none" strokeLinecap="round" strokeLinejoin="round"/></svg>}
-              </div>
-              <div className={\`ct2 \${c.done?'done':''}\`}>{c.text}</div>
-              <div className={\`badge \${c.bc}\`}>{c.tag}</div>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
+            <div style={{display:'flex',alignItems:'center',gap:8}}>
+              <div className="ct" style={{marginBottom:0}}>{useGTasks?'Tarefas':'Checklist do dia'}</div>
+              {useGTasks&&<div className="live" style={{fontSize:9,padding:'2px 6px'}}>Google Tasks</div>}
             </div>
-          ))}
+            <div style={{fontSize:11,color:'var(--t2)'}}>{useGTasks?(gtasks.filter(t=>t.done).length+'/'+gtasks.length):(done+'/'+checks.length)}</div>
+          </div>
+          {useGTasks?(
+            <div>
+              <div className="pbar" style={{marginBottom:14}}><div className="pf" style={{width:(gtasks.filter(t=>t.done).length/gtasks.length*100)+'%',background:'var(--accent)'}}/></div>
+              <div style={{maxHeight:340,overflowY:'auto'}}>
+                {gtasks.slice(0,30).map(t=>{
+                  const overdue=t.due&&!t.done&&new Date(t.due)<new Date(new Date().toDateString());
+                  return(
+                    <div key={t.id} className="ci" onClick={()=>toggleTask(t)}>
+                      <div className={\`cb \${t.done?'done':''}\`}>
+                        {t.done&&<svg width="9" height="7" viewBox="0 0 9 7"><path d="M1 3.5l2.5 2.5 4.5-5" stroke="#fff" strokeWidth="1.7" fill="none" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+                      </div>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div className={\`ct2 \${t.done?'done':''}\`} style={{whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{t.title}</div>
+                        {t.due&&<div style={{fontSize:10,color:overdue?'var(--red)':'var(--t3)',marginTop:1}}>{overdue?'⚠ Atrasada — ':''}{new Date(t.due).toLocaleDateString('pt-BR',{day:'numeric',month:'short'})}</div>}
+                      </div>
+                      {t.listName&&<div className="badge z-" style={{fontSize:9,flexShrink:0}}>{t.listName}</div>}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ):(
+            <div>
+              <div className="pbar" style={{marginBottom:14}}><div className="pf" style={{width:(done/checks.length*100)+'%',background:'var(--accent)'}}/></div>
+              {checks.map(c=>(
+                <div key={c.id} className="ci" onClick={()=>setChecks(p=>p.map(x=>x.id===c.id?{...x,done:!x.done}:x))}>
+                  <div className={\`cb \${c.done?'done':''}\`}>
+                    {c.done&&<svg width="9" height="7" viewBox="0 0 9 7"><path d="M1 3.5l2.5 2.5 4.5-5" stroke="#fff" strokeWidth="1.7" fill="none" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+                  </div>
+                  <div className={\`ct2 \${c.done?'done':''}\`}>{c.text}</div>
+                  <div className={\`badge \${c.bc}\`}>{c.tag}</div>
+                </div>
+              ))}
+              {gtokens&&<div style={{fontSize:11,color:'var(--t3)',marginTop:8,textAlign:'center'}}>Nenhuma tarefa no Google Tasks — crie tarefas lá e elas aparecem aqui</div>}
+            </div>
+          )}
         </div>
         <div style={{display:'flex',flexDirection:'column',gap:14}}>
           {!tokens?<WhoopConnect/>:(
@@ -595,7 +651,7 @@ function DashboardPage({checks,setChecks,whoop}){
         <div className="card">
           <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:14}}>
             <div className="ct" style={{marginBottom:0}}>Eventos de hoje</div>
-            <div className="live">Google Calendar</div>
+            {LIVE_EVENTS?<div className="live">Google Calendar</div>:<div className="badge z-" style={{fontSize:9}}>agenda local</div>}
           </div>
           {todayEvs.length===0?<div style={{color:'var(--t3)',fontSize:13}}>Sem eventos hoje</div>:todayEvs.map((e,i)=>(
             <div key={i} className="ev">
@@ -651,14 +707,43 @@ function FitnessPage({whoop}){
   );
 }
 
+function weekKey(){
+  const d=new Date();
+  const day=(d.getDay()+6)%7; // 0=segunda
+  const mon=new Date(d);mon.setDate(d.getDate()-day);
+  return mon.toISOString().slice(0,10);
+}
+function loadHabits(){
+  try{
+    const saved=JSON.parse(localStorage.getItem('habits_v1'));
+    if(saved&&Array.isArray(saved.habits)&&saved.habits.length){
+      if(saved.week===weekKey())return saved.habits;
+      // Nova semana: streaks continuam, dias zeram
+      return saved.habits.map(h=>({...h,days:[0,0,0,0,0,0,0]}));
+    }
+  }catch{}
+  return HABITS.map(h=>({...h}));
+}
 function HabitsPage(){
   const dls=['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'];
-  const rate=Math.round(HABITS.reduce((a,h)=>a+h.days.filter(Boolean).length,0)/(HABITS.length*7)*100);
+  const[habits,setHabits]=useState(loadHabits);
+  useEffect(()=>{try{localStorage.setItem('habits_v1',JSON.stringify({week:weekKey(),habits}))}catch{}},[habits]);
+  const todayIdx=(new Date().getDay()+6)%7;
+  function toggleDay(i,j){
+    setHabits(p=>p.map((h,ii)=>{
+      if(ii!==i)return h;
+      const days=h.days.map((d,jj)=>jj===j?(d?0:1):d);
+      const streak=days[j]&&j===todayIdx?h.streak+1:(j===todayIdx&&!days[j]?Math.max(0,h.streak-1):h.streak);
+      return {...h,days,streak};
+    }));
+  }
+  const rate=Math.round(habits.reduce((a,h)=>a+h.days.filter(Boolean).length,0)/(habits.length*7)*100);
+  const maxStreak=Math.max(...habits.map(h=>h.streak));
   return(
     <div className="page">
       <div className="ph"><div className="pt">Hábitos</div><div className="ps">Consistência é o segredo</div></div>
       <div className="g g4" style={{marginBottom:14}}>
-        {[{l:'Taxa esta semana',v:rate+'%',c:'var(--accent)'},{l:'Maior sequência',v:'27d 🔥',c:'var(--amber)'},{l:'Hábitos ativos',v:HABITS.length,c:'var(--green)'},{l:'Hoje',v:HABITS.filter(h=>h.days[6]).length+'/'+HABITS.length,c:'var(--blue)'}].map(s=>(
+        {[{l:'Taxa esta semana',v:rate+'%',c:'var(--accent)'},{l:'Maior sequência',v:maxStreak+'d 🔥',c:'var(--amber)'},{l:'Hábitos ativos',v:habits.length,c:'var(--green)'},{l:'Hoje',v:habits.filter(h=>h.days[todayIdx]).length+'/'+habits.length,c:'var(--blue)'}].map(s=>(
           <div key={s.l} className="card"><div className="ct">{s.l}</div><div className="mv" style={{color:s.c}}>{s.v}</div></div>
         ))}
       </div>
@@ -667,13 +752,14 @@ function HabitsPage(){
           <div className="ct" style={{marginBottom:0}}>Esta semana</div>
           <div style={{display:'flex',gap:4}}>{dls.map(d=><div key={d} style={{width:26,textAlign:'center',fontSize:10,fontWeight:600,color:'var(--t3)'}}>{d}</div>)}</div>
         </div>
-        {HABITS.map((h,i)=>(
+        {habits.map((h,i)=>(
           <div key={i} className="hr">
             <div className="hn">{h.name}</div>
-            <div className="hd">{h.days.map((d,j)=><div key={j} className={\`hday \${d?'done':''}\`}>{d?'✓':''}</div>)}</div>
+            <div className="hd">{h.days.map((d,j)=><div key={j} onClick={()=>toggleDay(i,j)} className={\`hday \${d?'done':''} \${j===todayIdx?'tdy':''}\`} style={{cursor:'pointer'}}>{d?'✓':''}</div>)}</div>
             <div className="hst">🔥{h.streak}</div>
           </div>
         ))}
+        <div style={{fontSize:10.5,color:'var(--t3)',marginTop:6}}>Clique nos quadrados para marcar — salvo automaticamente, reseta toda segunda</div>
       </div>
       <div className="card">
         <div className="ct" style={{marginBottom:12}}>Frequência – 90 dias</div>
@@ -699,15 +785,15 @@ function CalendarPage(){
   const first=new Date(year,month,1).getDay();
   const days=new Date(year,month+1,0).getDate();
   const selEvs=evDay(new Date(year,month,selDay));
-  const withEvs=new Set(GCAL_EVENTS.map(e=>{const d=new Date(e.start);return d.getFullYear()===year&&d.getMonth()===month?d.getDate():null}).filter(Boolean));
-  const upcoming=GCAL_EVENTS.filter(e=>new Date(e.start)>=new Date(_now.getFullYear(),_now.getMonth(),_now.getDate())).sort((a,b)=>new Date(a.start)-new Date(b.start)).slice(0,10);
+  const withEvs=new Set(allEvents().map(e=>{const d=new Date(e.start);return d.getFullYear()===year&&d.getMonth()===month?d.getDate():null}).filter(Boolean));
+  const upcoming=allEvents().filter(e=>new Date(e.start)>=new Date(_now.getFullYear(),_now.getMonth(),_now.getDate())).sort((a,b)=>new Date(a.start)-new Date(b.start)).slice(0,10);
   const todayD=_now.getDate(),todayM=_now.getMonth(),todayY=_now.getFullYear();
   return(
     <div className="page">
       <div className="ph">
         <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:3}}>
           <div className="pt">Calendário</div>
-          <div className="live">Google Calendar</div>
+          {LIVE_EVENTS?<div className="live">Google Calendar — ao vivo</div>:<div className="badge z-" style={{fontSize:9}}>agenda local</div>}
         </div>
         <div className="ps">{mNames[month]} {year}</div>
       </div>
@@ -830,6 +916,9 @@ function App(){
   const[checks,setChecks]=useState(loadChecks);
   const cache=getWhoopCache();
   const[whoop,setWhoop]=useState(cache?{loading:false,data:cache.data,error:null,updatedAt:cache.at}:{loading:false,data:null,error:null,updatedAt:null});
+  const gcache=getGoogleCache();
+  if(gcache?.data?.events?.length)LIVE_EVENTS=gcache.data.events;
+  const[google,setGoogle]=useState(gcache?{loading:false,data:gcache.data,error:null,updatedAt:gcache.at}:{loading:false,data:null,error:null,updatedAt:null});
 
   // Salva o checklist do dia a cada mudança (e limpa dias antigos)
   useEffect(()=>{
@@ -842,6 +931,7 @@ function App(){
   useEffect(()=>{
     function onMsg(e){
       if(e.data?.type==='WHOOP_AUTH_SUCCESS'){saveTokens(e.data.tokens);fetchWhoop(e.data.tokens.access_token);}
+      if(e.data?.type==='GOOGLE_AUTH_SUCCESS'){saveGoogleTokens(e.data.tokens);fetchGoogle(e.data.tokens.access_token);}
     }
     window.addEventListener('message',onMsg);
     return()=>window.removeEventListener('message',onMsg);
@@ -850,10 +940,15 @@ function App(){
   useEffect(()=>{
     const t=getTokens();
     if(t?.access_token)fetchWhoop(t.access_token);
+    const g=getGoogleTokens();
+    if(g?.access_token)fetchGoogle(g.access_token);
   },[]);
 
   useEffect(()=>{
-    const interval=setInterval(()=>{const t=getTokens();if(t?.access_token)fetchWhoop(t.access_token);},55*60*1000);
+    const interval=setInterval(()=>{
+      const t=getTokens();if(t?.access_token)fetchWhoop(t.access_token);
+      const g=getGoogleTokens();if(g?.access_token)fetchGoogle(g.access_token);
+    },55*60*1000);
     return()=>clearInterval(interval);
   },[]);
 
@@ -864,6 +959,9 @@ function App(){
       const c=getWhoopCache();
       const t=getTokens();
       if(t?.access_token&&(!c||Date.now()-c.at>10*60*1000))fetchWhoop(t.access_token);
+      const gc=getGoogleCache();
+      const g=getGoogleTokens();
+      if(g?.access_token&&(!gc||Date.now()-gc.at>10*60*1000))fetchGoogle(g.access_token);
     }
     document.addEventListener('visibilitychange',onVis);
     return()=>document.removeEventListener('visibilitychange',onVis);
@@ -888,9 +986,51 @@ function App(){
       setWhoop(s=>({loading:false,data:s.data,error:s.data?null:err.message,updatedAt:s.updatedAt}));
     }
   }
-  function refreshNow(){const t=getTokens();if(t?.access_token)fetchWhoop(t.access_token);}
+  function refreshNow(){
+    const t=getTokens();if(t?.access_token)fetchWhoop(t.access_token);
+    const g=getGoogleTokens();if(g?.access_token)fetchGoogle(g.access_token);
+  }
+
+  async function fetchGoogle(token){
+    setGoogle(s=>({...s,loading:true,error:null}));
+    try{
+      const stored=getGoogleTokens();
+      const headers={'Authorization':'Bearer '+token,'Content-Type':'application/json'};
+      if(stored?.refresh_token)headers['X-Refresh-Token']=stored.refresh_token;
+      const r=await fetch('/google/data',{headers});
+      if(!r.ok)throw new Error('HTTP '+r.status);
+      const data=await r.json();
+      if(data._new_tokens?.access_token){
+        saveGoogleTokens({...stored,access_token:data._new_tokens.access_token,saved_at:Date.now()});
+      }
+      if(data.events?.length)LIVE_EVENTS=data.events;
+      saveGoogleCache(data);
+      setGoogle({loading:false,data,error:null,updatedAt:Date.now()});
+    }catch(err){
+      setGoogle(s=>({loading:false,data:s.data,error:s.data?null:err.message,updatedAt:s.updatedAt}));
+    }
+  }
+
+  async function toggleTask(task){
+    // otimista: atualiza a UI na hora
+    setGoogle(s=>{
+      if(!s?.data?.tasks)return s;
+      const tasks=s.data.tasks.map(t=>t.id===task.id?{...t,done:!t.done}:t);
+      const data={...s.data,tasks};
+      saveGoogleCache(data);
+      return {...s,data};
+    });
+    try{
+      const stored=getGoogleTokens();
+      if(!stored?.access_token)return;
+      const headers={'Authorization':'Bearer '+stored.access_token,'Content-Type':'application/json'};
+      if(stored?.refresh_token)headers['X-Refresh-Token']=stored.refresh_token;
+      await fetch('/google/data',{method:'POST',headers,body:JSON.stringify({listId:task.listId,taskId:task.id,done:!task.done})});
+    }catch{}
+  }
 
   const tokens=getTokens();
+  const gtokens=getGoogleTokens();
   const Comp=PAGES[page].comp;
 
   return(
@@ -908,10 +1048,10 @@ function App(){
           </div>
         ))}
         <div className="nsec" style={{marginTop:8}}>Integrações</div>
-        <div className="ni" style={{cursor:'default'}}>
-          <div className="dot" style={{background:'#22c55e'}}/>
-          Google Calendar
-          <div className="badge g-" style={{marginLeft:'auto',fontSize:9}}>Ativo</div>
+        <div className="ni" style={{cursor:gtokens?'default':'pointer'}} onClick={()=>!gtokens&&window.open('/google/login','_blank','width=520,height=680')}>
+          <div className="dot" style={{background:gtokens?'#22c55e':'var(--t3)'}}/>
+          Google
+          {gtokens?<div className="badge g-" style={{marginLeft:'auto',fontSize:9}}>Ativo</div>:<div className="badge y-" style={{marginLeft:'auto',fontSize:9}}>Conectar</div>}
         </div>
         <div className="ni" style={{cursor:tokens?'default':'pointer'}} onClick={()=>!tokens&&window.open('/whoop/login','_blank','width=520,height=660')}>
           <div className="dot" style={{background:tokens?'#22c55e':'var(--t3)'}}/>
@@ -920,8 +1060,13 @@ function App(){
         </div>
         <div className="sbot">
           {tokens&&(
-            <div style={{padding:'6px 10px',marginBottom:4}}>
+            <div style={{padding:'3px 10px'}}>
               <button onClick={()=>{clearTokens();try{localStorage.removeItem('whoop_cache')}catch{};setWhoop({loading:false,data:null,error:null,updatedAt:null})}} style={{background:'var(--rbg)',border:'none',borderRadius:5,color:'var(--red)',fontSize:11,padding:'4px 10px',cursor:'pointer',width:'100%'}}>Desconectar WHOOP</button>
+            </div>
+          )}
+          {gtokens&&(
+            <div style={{padding:'3px 10px',marginBottom:4}}>
+              <button onClick={()=>{clearGoogleTokens();LIVE_EVENTS=null;setGoogle({loading:false,data:null,error:null,updatedAt:null})}} style={{background:'var(--rbg)',border:'none',borderRadius:5,color:'var(--red)',fontSize:11,padding:'4px 10px',cursor:'pointer',width:'100%'}}>Desconectar Google</button>
             </div>
           )}
           <div className="uc">
@@ -934,7 +1079,7 @@ function App(){
         </div>
       </aside>
       <main className="main">
-        <Comp checks={checks} setChecks={setChecks} whoop={whoop.loading||whoop.data||whoop.error?{...whoop,onRefresh:refreshNow}:null}/>
+        <Comp checks={checks} setChecks={setChecks} whoop={whoop.loading||whoop.data||whoop.error?{...whoop,onRefresh:refreshNow}:null} google={google} toggleTask={toggleTask}/>
       </main>
       <nav className="mnav">
         {Object.entries(PAGES).map(([k,p])=>(
