@@ -1,6 +1,6 @@
 export default async function handler(req, res) {
   const { code, error, error_description } = req.query;
-####1
+
   if (error) {
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     return res.send(errorPage(error, error_description));
