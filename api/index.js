@@ -103,8 +103,15 @@ html,body,#root{height:100%;font-family:var(--fn);background:var(--bg);color:var
 .spin{width:32px;height:32px;border:3px solid rgba(255,255,255,.08);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite;margin:0 auto}
 @keyframes spin{to{transform:rotate(360deg)}}
 canvas{max-height:180px}
-@media(max-width:900px){.sidebar{display:none}.page{padding:16px}.g4,.g3{grid-template-columns:1fr 1fr}.g2{grid-template-columns:1fr}}
-@media(max-width:600px){.g4,.g3,.g2{grid-template-columns:1fr}}
+.mnav{display:none;position:fixed;bottom:0;left:0;right:0;background:rgba(17,17,17,.92);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-top:1px solid var(--b);z-index:50;padding:6px 8px calc(6px + env(safe-area-inset-bottom))}
+.mni{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 0;border-radius:8px;cursor:pointer;color:var(--t3);font-size:9.5px;font-weight:600}
+.mni.active{color:var(--a2)}
+.mni span{font-size:16px}
+.refresh-btn{display:inline-flex;align-items:center;gap:5px;background:var(--s2);border:1px solid var(--b);border-radius:6px;color:var(--t2);font-size:11px;font-weight:600;padding:4px 10px;cursor:pointer;transition:all .12s}
+.refresh-btn:hover{background:var(--s3);color:var(--t)}
+.refresh-btn:disabled{opacity:.5;cursor:default}
+@media(max-width:900px){.sidebar{display:none}.mnav{display:flex}.main{padding-bottom:70px}.page{padding:16px}.g4,.g3{grid-template-columns:1fr 1fr}.g2{grid-template-columns:1fr}}
+@media(max-width:600px){.g4,.g3{grid-template-columns:1fr 1fr}.g2{grid-template-columns:1fr}.pt{font-size:18px}}
 </style>
 </head>
 <body>
@@ -155,6 +162,25 @@ function evDay(day){return GCAL_EVENTS.filter(e=>sameDay(new Date(e.start),day))
 function getTokens(){try{return JSON.parse(localStorage.getItem('whoop_tokens'))||null}catch{return null}}
 function saveTokens(t){try{localStorage.setItem('whoop_tokens',JSON.stringify(t))}catch{}}
 function clearTokens(){try{localStorage.removeItem('whoop_tokens')}catch{}}
+function getWhoopCache(){try{return JSON.parse(localStorage.getItem('whoop_cache'))||null}catch{return null}}
+function saveWhoopCache(data){try{localStorage.setItem('whoop_cache',JSON.stringify({data,at:Date.now()}))}catch{}}
+
+// Escolhe o sono principal mais recente com score (ignora cochilos e registros sem score)
+function pickSleep(data){
+  const rs=data?.sleep?.records||[];
+  return rs.find(r=>r.score&&!r.nap)||rs.find(r=>r.score)||rs[0]||null;
+}
+const SPORT_PT={'Weightlifting':'Musculação','Running':'Corrida','Walking':'Caminhada','Cycling':'Ciclismo','Swimming':'Natação','Functional Fitness':'Funcional','Basketball':'Basquete','Soccer':'Futebol','Football':'Futebol Americano','Tennis':'Tênis','Boxing':'Boxe','Hiking/Rucking':'Trilha','Activity':'Atividade','HIIT':'HIIT','Yoga':'Yoga','Pilates':'Pilates','Spin':'Spinning','Rowing':'Remo','Jiu Jitsu':'Jiu-Jitsu','Martial Arts':'Artes Marciais'};
+function sportName(w){const n=w?.sport_name;return (n&&(SPORT_PT[n]||n))||'Treino'}
+function timeAgo(ts){
+  if(!ts)return'';
+  const m=Math.floor((Date.now()-ts)/60000);
+  if(m<1)return'agora';
+  if(m<60)return'há '+m+' min';
+  const h=Math.floor(m/60);
+  if(h<24)return'há '+h+'h';
+  return 'há '+Math.floor(h/24)+'d';
+}
 
 function scoreColor(v){
   if(v===null||v===undefined)return'#444';
@@ -224,7 +250,7 @@ function WhoopConnect(){
 function WhoopMetrics({whoop}){
   if(!whoop)return <WhoopConnect/>;
   const{loading,error,data}=whoop;
-  if(loading)return(
+  if(loading&&!data)return(
     <div style={{textAlign:'center',padding:'32px 0'}}>
       <div className="spin" style={{marginBottom:12}}/>
       <div style={{fontSize:12,color:'var(--t3)'}}>Carregando dados WHOOP…</div>
@@ -258,7 +284,7 @@ function WhoopMetrics({whoop}){
   const spo2=cr?.score?.spo2_percentage??null;
   const skin_temp=cr?.score?.skin_temp_celsius??null;
 
-  const sleepRec=data.sleep?.records?.[0];
+  const sleepRec=pickSleep(data);
   const sleep_perf=sleepRec?.score?.sleep_performance_percentage??null;
   const sleep_ms=sleepRec?.score?.stage_summary?.total_in_bed_time_milli??null;
   const sleep_hrs=sleep_ms?Math.round(sleep_ms/360000)/10:null;
@@ -393,7 +419,7 @@ function WhoopMetrics({whoop}){
             <div key={i} style={{display:'flex',alignItems:'center',gap:12,padding:'9px 0',borderBottom:i<Math.min(workouts.length,5)-1?'1px solid var(--b)':'none'}}>
               <div style={{width:36,height:36,borderRadius:'var(--rs)',background:'var(--pbg)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:18,flexShrink:0}}>🏋️</div>
               <div style={{flex:1}}>
-                <div style={{fontSize:13,fontWeight:600}}>{w.sport_name||'Treino'}</div>
+                <div style={{fontSize:13,fontWeight:600}}>{sportName(w)}</div>
                 <div style={{fontSize:11,color:'var(--t3)',marginTop:1}}>{new Date(w.start).toLocaleDateString('pt-BR',{weekday:'short',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}</div>
               </div>
               <div style={{display:'flex',gap:14,textAlign:'right'}}>
@@ -487,7 +513,7 @@ function DashboardPage({checks,setChecks,whoop}){
   const recovery_score=cr?.score?.recovery_score??null;
   const hrv=cr?.score?.hrv_rmssd_milli??null;
   const rhr=cr?.score?.resting_heart_rate??null;
-  const sleepRec=whoop?.data?.sleep?.records?.[0];
+  const sleepRec=pickSleep(whoop?.data);
   const sleep_perf=sleepRec?.score?.sleep_performance_percentage??null;
   const metricsRow=[
     {l:'Recovery',v:recovery_score!==null?Math.round(recovery_score)+'%':'–',c:scoreColor(recovery_score),src:tokens?'whoop':'mock'},
@@ -502,6 +528,7 @@ function DashboardPage({checks,setChecks,whoop}){
         <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:3}}>
           <div className="pt">Shalom, Isaac 👋</div>
           {tokens&&<div className="live">WHOOP + Google Calendar</div>}
+          {tokens&&whoop&&<button className="refresh-btn" onClick={whoop.onRefresh} disabled={whoop.loading}>{whoop.loading?'Atualizando…':'↻ '+(whoop.updatedAt?timeAgo(whoop.updatedAt):'Atualizar')}</button>}
         </div>
         <div className="ps" style={{textTransform:'capitalize'}}>{dateStr}</div>
       </div>
@@ -612,7 +639,13 @@ function FitnessPage({whoop}){
   };
   return(
     <div className="page">
-      <div className="ph"><div className="pt">Fitness</div><div className="ps">Corpo, treinos e dados WHOOP</div></div>
+      <div className="ph">
+        <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:3}}>
+          <div className="pt">Fitness</div>
+          {tokens&&whoop&&<button className="refresh-btn" onClick={whoop.onRefresh} disabled={whoop.loading}>{whoop.loading?'Atualizando…':'↻ '+(whoop.updatedAt?timeAgo(whoop.updatedAt):'Atualizar')}</button>}
+        </div>
+        <div className="ps">Corpo, treinos e dados WHOOP</div>
+      </div>
       {tokens?<WhoopMetrics whoop={whoop}/>:<><WhoopConnect/><div style={{marginTop:16}}>{wh()}</div></>}
     </div>
   );
@@ -645,7 +678,7 @@ function HabitsPage(){
       <div className="card">
         <div className="ct" style={{marginBottom:12}}>Frequência – 90 dias</div>
         <div style={{display:'grid',gridTemplateColumns:'repeat(13,1fr)',gap:3}}>
-          {Array.from({length:91}).map((_,i)=>{const v=Math.random();const bg=v>.7?'#6366f1':v>.45?'rgba(99,102,241,.5)':v>.2?'rgba(99,102,241,.18)':'var(--s2)';return<div key={i} style={{aspectRatio:1,borderRadius:3,background:bg}}/>})}
+          {Array.from({length:91}).map((_,i)=>{const v=(Math.sin(i*12.9898)*43758.5453)%1<0?1+((Math.sin(i*12.9898)*43758.5453)%1):(Math.sin(i*12.9898)*43758.5453)%1;const bg=v>.7?'#6366f1':v>.45?'rgba(99,102,241,.5)':v>.2?'rgba(99,102,241,.18)':'var(--s2)';return<div key={i} style={{aspectRatio:1,borderRadius:3,background:bg}}/>})}
         </div>
         <div style={{display:'flex',alignItems:'center',gap:7,marginTop:10}}>
           <span style={{fontSize:10,color:'var(--t3)'}}>Menos</span>
@@ -783,10 +816,28 @@ const PAGES={
   goals:{label:'Objetivos',ico:'◇',comp:GoalsPage},
 };
 
+const TODAY_KEY=new Date().toISOString().slice(0,10);
+function loadChecks(){
+  try{
+    const saved=JSON.parse(localStorage.getItem('checks_'+TODAY_KEY));
+    if(Array.isArray(saved)&&saved.length)return saved;
+  }catch{}
+  return CHECKLIST_DEFAULT.map(c=>({...c,done:false}));
+}
+
 function App(){
   const[page,setPage]=useState('dashboard');
-  const[checks,setChecks]=useState(CHECKLIST_DEFAULT);
-  const[whoop,setWhoop]=useState({loading:false,data:null,error:null});
+  const[checks,setChecks]=useState(loadChecks);
+  const cache=getWhoopCache();
+  const[whoop,setWhoop]=useState(cache?{loading:false,data:cache.data,error:null,updatedAt:cache.at}:{loading:false,data:null,error:null,updatedAt:null});
+
+  // Salva o checklist do dia a cada mudança (e limpa dias antigos)
+  useEffect(()=>{
+    try{
+      localStorage.setItem('checks_'+TODAY_KEY,JSON.stringify(checks));
+      Object.keys(localStorage).forEach(k=>{if(k.startsWith('checks_')&&k!=='checks_'+TODAY_KEY)localStorage.removeItem(k)});
+    }catch{}
+  },[checks]);
 
   useEffect(()=>{
     function onMsg(e){
@@ -806,6 +857,18 @@ function App(){
     return()=>clearInterval(interval);
   },[]);
 
+  // Ao voltar para a aba, atualiza se os dados tiverem mais de 10 min
+  useEffect(()=>{
+    function onVis(){
+      if(document.visibilityState!=='visible')return;
+      const c=getWhoopCache();
+      const t=getTokens();
+      if(t?.access_token&&(!c||Date.now()-c.at>10*60*1000))fetchWhoop(t.access_token);
+    }
+    document.addEventListener('visibilitychange',onVis);
+    return()=>document.removeEventListener('visibilitychange',onVis);
+  },[]);
+
   async function fetchWhoop(token){
     setWhoop(s=>({...s,loading:true,error:null}));
     try{
@@ -818,11 +881,14 @@ function App(){
       if(data._new_tokens?.access_token){
         saveTokens({access_token:data._new_tokens.access_token,refresh_token:data._new_tokens.refresh_token||stored?.refresh_token,expires_in:data._new_tokens.expires_in||3600,scope:stored?.scope||'',saved_at:Date.now()});
       }
-      setWhoop({loading:false,data,error:null});
+      saveWhoopCache(data);
+      setWhoop({loading:false,data,error:null,updatedAt:Date.now()});
     }catch(err){
-      setWhoop({loading:false,data:null,error:err.message});
+      // Mantém os dados anteriores em caso de erro — nunca apaga o dashboard
+      setWhoop(s=>({loading:false,data:s.data,error:s.data?null:err.message,updatedAt:s.updatedAt}));
     }
   }
+  function refreshNow(){const t=getTokens();if(t?.access_token)fetchWhoop(t.access_token);}
 
   const tokens=getTokens();
   const Comp=PAGES[page].comp;
@@ -855,7 +921,7 @@ function App(){
         <div className="sbot">
           {tokens&&(
             <div style={{padding:'6px 10px',marginBottom:4}}>
-              <button onClick={()=>{clearTokens();setWhoop({loading:false,data:null,error:null})}} style={{background:'var(--rbg)',border:'none',borderRadius:5,color:'var(--red)',fontSize:11,padding:'4px 10px',cursor:'pointer',width:'100%'}}>Desconectar WHOOP</button>
+              <button onClick={()=>{clearTokens();try{localStorage.removeItem('whoop_cache')}catch{};setWhoop({loading:false,data:null,error:null,updatedAt:null})}} style={{background:'var(--rbg)',border:'none',borderRadius:5,color:'var(--red)',fontSize:11,padding:'4px 10px',cursor:'pointer',width:'100%'}}>Desconectar WHOOP</button>
             </div>
           )}
           <div className="uc">
@@ -868,8 +934,16 @@ function App(){
         </div>
       </aside>
       <main className="main">
-        <Comp checks={checks} setChecks={setChecks} whoop={whoop.loading||whoop.data||whoop.error?whoop:null}/>
+        <Comp checks={checks} setChecks={setChecks} whoop={whoop.loading||whoop.data||whoop.error?{...whoop,onRefresh:refreshNow}:null}/>
       </main>
+      <nav className="mnav">
+        {Object.entries(PAGES).map(([k,p])=>(
+          <div key={k} className={\`mni \${page===k?'active':''}\`} onClick={()=>setPage(k)}>
+            <span>{p.ico}</span>
+            {p.label}
+          </div>
+        ))}
+      </nav>
     </div>
   );
 }
