@@ -192,7 +192,7 @@ canvas{max-height:190px}
 const {useState,useEffect,useMemo,useRef}=React;
 
 // ============================ CONSTANTES ============================
-const HABITS_DEF=[
+const DEFAULT_HABITS=[
   {id:'ex',    name:'Exercício',                ico:'🏋️'},
   {id:'nk',    name:'🚫👊🥩',                    ico:'🛡️'},
   {id:'shiur', name:'Shiur',                    ico:'📖'},
@@ -207,6 +207,10 @@ const HABITS_DEF=[
   {id:'invis', name:'Invisalign',               ico:'😁'},
   {id:'agua',  name:'Beber 2L+ de água',        ico:'💧'},
 ];
+function loadHabitDefs(){const v=LS('habit_defs_v1',null);return (v&&Array.isArray(v)&&v.length)?v:DEFAULT_HABITS}
+function saveHabitDefs(list){LSet('habit_defs_v1',list);LSet('habit_defs_at',Date.now());DEFS.list=list}
+let DEFS={list:null}; // preenchido após utils (loadHabitDefs usa LS)
+
 const SPORT_PT={'weightlifting':'Musculação','running':'Corrida','walking':'Caminhada','cycling':'Ciclismo','swimming':'Natação','functional fitness':'Funcional','basketball':'Basquete','soccer':'Futebol','football':'Futebol Americano','tennis':'Tênis','boxing':'Boxe','hiking/rucking':'Trilha','hiking':'Trilha','activity':'Atividade','hiit':'HIIT','yoga':'Yoga','pilates':'Pilates','spin':'Spinning','spinning':'Spinning','rowing':'Remo','jiu jitsu':'Jiu-Jitsu','martial arts':'Artes Marciais','stairmaster':'Escada','elliptical':'Elíptico','crossfit':'CrossFit'};
 const SPORT_ICO={'Musculação':'🏋️','Corrida':'🏃','Caminhada':'🚶','Ciclismo':'🚴','Natação':'🏊','Futebol':'⚽','Basquete':'🏀','Tênis':'🎾','Boxe':'🥊','Trilha':'🥾','Yoga':'🧘','Remo':'🚣','Spinning':'🚴','Jiu-Jitsu':'🥋','Artes Marciais':'🥋','CrossFit':'🏋️'};
 const WD=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
@@ -239,6 +243,7 @@ function trend(cur,prev){
 function LS(k,fb){try{const v=JSON.parse(localStorage.getItem(k));return v===null||v===undefined?fb:v}catch{return fb}}
 function LSet(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch{}}
 function LDel(k){try{localStorage.removeItem(k)}catch{}}
+DEFS.list=loadHabitDefs();
 
 // ============================ TOKENS & CACHE ============================
 function getTokens(){return LS('whoop_tokens',null)}
@@ -251,6 +256,53 @@ function saveGoogleTokens(t){LSet('google_tokens',t)}
 function clearGoogleTokens(){LDel('google_tokens');LDel('google_cache')}
 function getGoogleCache(){return LS('google_cache',null)}
 function saveGoogleCache(data){LSet('google_cache',{data,at:Date.now()})}
+
+// ============================ VIDA JUDAICA (Hebcal, sem API key) ============================
+async function fetchJewish(){
+  const cached=LS('jew_cache',null);
+  if(cached&&Date.now()-cached.at<6*3600*1000)return cached.v;
+  const now=new Date();
+  const out={hebrew:null,parasha:null,candles:null,havdalah:null};
+  try{
+    const conv=await fetch('https://www.hebcal.com/converter?cfg=json&gy='+now.getFullYear()+'&gm='+(now.getMonth()+1)+'&gd='+now.getDate()+'&g2h=1').then(r=>r.json());
+    out.hebrew=conv.hebrew||null;
+  }catch(e){}
+  try{
+    // geonameid 3448439 = São Paulo
+    const sh=await fetch('https://www.hebcal.com/shabbat?cfg=json&geonameid=3448439&M=on').then(r=>r.json());
+    (sh.items||[]).forEach(it=>{
+      if(it.category==='parashat')out.parasha=it.title.replace('Parashat','Parashat ').replace('  ',' ');
+      if(it.category==='candles')out.candles=it.date;
+      if(it.category==='havdalah')out.havdalah=it.date;
+    });
+  }catch(e){}
+  LSet('jew_cache',{at:Date.now(),v:out});
+  return out;
+}
+function fmtShort(iso){const d=new Date(iso);return WD[d.getDay()].toLowerCase()+' '+pad2(d.getHours())+':'+pad2(d.getMinutes())}
+
+// ============================ SINCRONIZAÇÃO (multi-dispositivo) ============================
+function getSyncKey(){return LS('sync_key',null)}
+function saveSyncKey(k){if(k)LSet('sync_key',k);else LDel('sync_key')}
+async function syncFetch(method,merge){
+  const key=getSyncKey();
+  if(!key)return null;
+  const opts={method,headers:{'X-Sync-Key':key,'Content-Type':'application/json'}};
+  if(merge)opts.body=JSON.stringify({merge});
+  const r=await fetch('/store',opts);
+  if(!r.ok){const e=new Error('sync_'+r.status);e.status=r.status;throw e}
+  return r.json();
+}
+let _pushTimer=null;
+function syncPushSoon(merge){ // agrupa escritas em 1.2s (fire-and-forget)
+  if(!getSyncKey())return;
+  window._pendingMerge=Object.assign(window._pendingMerge||{},merge);
+  clearTimeout(_pushTimer);
+  _pushTimer=setTimeout(()=>{
+    const m=window._pendingMerge;window._pendingMerge=null;
+    syncFetch('POST',m).catch(()=>{});
+  },1200);
+}
 
 // ============================ WHOOP: derivações ============================
 function sportName(w){
@@ -321,8 +373,8 @@ function habitRate(log,id,days){
   return done/days;
 }
 function dayScore(log,dk){
-  const done=HABITS_DEF.filter(h=>habitDone(log,dk,h.id)).length;
-  return done/HABITS_DEF.length;
+  const done=DEFS.list.filter(h=>habitDone(log,dk,h.id)).length;
+  return done/DEFS.list.length;
 }
 
 // ============================ CONTEXTO (preparação p/ IA) ============================
@@ -348,10 +400,10 @@ function buildContext(whoopData,googleData,habitLog){
       items:tasks,
     },
     habits:{
-      defs:HABITS_DEF,
+      defs:DEFS.list,
       log:habitLog,
       today_score:dayScore(habitLog,tk),
-      streaks:HABITS_DEF.map(h=>({id:h.id,name:h.name,streak:habitStreak(habitLog,h.id),rate30:habitRate(habitLog,h.id,30)})),
+      streaks:DEFS.list.map(h=>({id:h.id,name:h.name,streak:habitStreak(habitLog,h.id),rate30:habitRate(habitLog,h.id,30)})),
     },
   };
 }
@@ -473,7 +525,7 @@ function TrendTag({t,goodUp}){
 }
 
 // ============================ PÁGINA: HOJE ============================
-function HojePage({whoop,google,habitLog,toggleHabit,taskAction,setPage,connect}){
+function HojePage({whoop,google,habitLog,toggleHabit,taskAction,setPage,connect,jew}){
   const[qa,setQa]=useState('');
   const NOW=new Date();
   const tk=todayKey();
@@ -514,7 +566,7 @@ function HojePage({whoop,google,habitLog,toggleHabit,taskAction,setPage,connect}
   const ctx=buildContext(wd,gd,habitLog);
   const insights=buildInsights(ctx);
   const dateStr=NOW.toLocaleDateString('pt-BR',{weekday:'long',day:'numeric',month:'long'});
-  const doneH=HABITS_DEF.filter(h=>habitDone(habitLog,tk,h.id)).length;
+  const doneH=DEFS.list.filter(h=>habitDone(habitLog,tk,h.id)).length;
 
   return(
     <div className="page">
@@ -524,7 +576,7 @@ function HojePage({whoop,google,habitLog,toggleHabit,taskAction,setPage,connect}
           {(wtok||gtok)&&<div className="live">{[wtok&&'WHOOP',gtok&&'Google'].filter(Boolean).join(' + ')}</div>}
           <RefreshBtn state={whoop||google}/>
         </div>
-        <div className="ps" style={{textTransform:'capitalize'}}>{dateStr}</div>
+        <div className="ps" style={{textTransform:'capitalize'}}>{dateStr}{jew&&jew.hebrew?<span style={{textTransform:'none',color:'var(--t3)'}}> · {jew.hebrew}</span>:null}</div>
         {(nowEv||nextEv)&&(
           <div style={{display:'flex',gap:8,marginTop:10,flexWrap:'wrap'}}>
             {nowEv&&<div className="live">Agora: {nowEv.summary} · até {fmtT(nowEv.end)}</div>}
@@ -571,7 +623,7 @@ function HojePage({whoop,google,habitLog,toggleHabit,taskAction,setPage,connect}
           <div style={{flex:1}}>
             <div className="ct" style={{marginBottom:6}}>Pontuação do dia</div>
             <div style={{fontSize:11.5,color:'var(--t2)',lineHeight:1.7}}>
-              <div>Hábitos <b>{doneH}/{HABITS_DEF.length}</b></div>
+              <div>Hábitos <b>{doneH}/{DEFS.list.length}</b></div>
               <div>Tarefas <b>{tDoneToday} feitas</b></div>
               <div>Corpo <b>{rec!==null?Math.round(rec)+'%':'–'}</b></div>
             </div>
@@ -592,15 +644,29 @@ function HojePage({whoop,google,habitLog,toggleHabit,taskAction,setPage,connect}
         </div>
       )}
 
+      {jew&&(jew.candles||jew.parasha)&&(
+        <div className="card" style={{marginBottom:14,display:'flex',alignItems:'center',gap:14,flexWrap:'wrap',background:'linear-gradient(135deg,rgba(251,191,36,.07),rgba(99,102,241,.04))',borderColor:'rgba(251,191,36,.18)'}}>
+          <span style={{fontSize:22}}>🕯️</span>
+          <div style={{flex:1,minWidth:200}}>
+            <div style={{fontSize:13.5,fontWeight:800}}>{jew.parasha||'Shabat'}</div>
+            <div style={{fontSize:11.5,color:'var(--t2)',marginTop:2}}>
+              {jew.candles&&<span>Velas: <b style={{color:'var(--amber)'}}>{fmtShort(jew.candles)}</b></span>}
+              {jew.havdalah&&<span> · Havdalá: <b style={{color:'var(--violet)'}}>{fmtShort(jew.havdalah)}</b></span>}
+              <span style={{color:'var(--t3)'}}> · horários de São Paulo</span>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="g g23" style={{marginBottom:14}}>
         <div className="card">
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
             <div className="ct" style={{marginBottom:0}}>Hábitos de hoje</div>
-            <div style={{fontSize:11,color:'var(--t2)'}}>{doneH}/{HABITS_DEF.length}</div>
+            <div style={{fontSize:11,color:'var(--t2)'}}>{doneH}/{DEFS.list.length}</div>
           </div>
-          <div className="pbar" style={{marginBottom:12}}><div className="pf" style={{width:(doneH/HABITS_DEF.length*100)+'%',background:'linear-gradient(90deg,var(--accent),var(--violet))'}}/></div>
+          <div className="pbar" style={{marginBottom:12}}><div className="pf" style={{width:(doneH/DEFS.list.length*100)+'%',background:'linear-gradient(90deg,var(--accent),var(--violet))'}}/></div>
           <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(200px,1fr))',gap:4}}>
-            {HABITS_DEF.map(h=>{
+            {DEFS.list.map(h=>{
               const d=habitDone(habitLog,tk,h.id);
               return(
                 <div key={h.id} className="task" onClick={()=>toggleHabit(tk,h.id)}>
@@ -1306,16 +1372,29 @@ function AgendaPage({google,connect}){
 }
 
 // ============================ PÁGINA: HÁBITOS ============================
-function HabitosPage({habitLog,toggleHabit}){
+function HabitosPage({habitLog,toggleHabit,habitDefs,setHabitDefs}){
+  const[manage,setManage]=useState(false);
+  const[draft,setDraft]=useState(null); // cópia editável
   const NOW=new Date();
+  function openManage(){setDraft(habitDefs.map(h=>({...h})));setManage(true)}
+  function saveManage(){
+    const clean=draft.filter(h=>h.name.trim()).map(h=>({id:h.id,name:h.name.trim(),ico:(h.ico||'✅').trim()||'✅'}));
+    if(clean.length===0)return alert('Mantenha pelo menos 1 hábito.');
+    setHabitDefs(clean);setManage(false);
+  }
+  function mv(i,dir){
+    const d=draft.slice();const j=i+dir;
+    if(j<0||j>=d.length)return;
+    const t=d[i];d[i]=d[j];d[j]=t;setDraft(d);
+  }
   const tk=todayKey();
   const wStart=weekMonday(NOW);
   const weekDays=Array.from({length:7}).map((_,i)=>addDays(wStart,i));
   const todayIdx=(NOW.getDay()+6)%7;
 
-  const rate7=HABITS_DEF.reduce((a,h)=>a+habitRate(habitLog,h.id,7),0)/HABITS_DEF.length;
-  const rate30=HABITS_DEF.reduce((a,h)=>a+habitRate(habitLog,h.id,30),0)/HABITS_DEF.length;
-  const streaks=HABITS_DEF.map(h=>({...h,streak:habitStreak(habitLog,h.id),r30:habitRate(habitLog,h.id,30)}));
+  const rate7=DEFS.list.reduce((a,h)=>a+habitRate(habitLog,h.id,7),0)/DEFS.list.length;
+  const rate30=DEFS.list.reduce((a,h)=>a+habitRate(habitLog,h.id,30),0)/DEFS.list.length;
+  const streaks=DEFS.list.map(h=>({...h,streak:habitStreak(habitLog,h.id),r30:habitRate(habitLog,h.id,30)}));
   const maxStreak=Math.max(...streaks.map(s=>s.streak),0);
   const sorted=streaks.slice().sort((a,b)=>b.r30-a.r30);
   const best=sorted.slice(0,3),worst=sorted.slice(-3).reverse();
@@ -1348,15 +1427,21 @@ function HabitosPage({habitLog,toggleHabit}){
     weekScores.push({l:fmtDM(ws),v:n?Math.round(sum/n*100):0});
   }
 
-  const doneToday=HABITS_DEF.filter(h=>habitDone(habitLog,tk,h.id)).length;
+  const doneToday=DEFS.list.filter(h=>habitDone(habitLog,tk,h.id)).length;
 
   return(
     <div className="page">
-      <div className="ph"><div className="pt">Hábitos</div><div className="ps">Disciplina diária — {HABITS_DEF.length} hábitos ativos</div></div>
+      <div className="ph">
+        <div style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
+          <div className="pt">Hábitos</div>
+          <button className="btn ghost sm" style={{marginLeft:'auto'}} onClick={openManage}>✎ Gerenciar hábitos</button>
+        </div>
+        <div className="ps">Disciplina diária — {DEFS.list.length} hábitos ativos</div>
+      </div>
 
       <div className="g g4" style={{marginBottom:14}}>
         {[
-          {l:'Hoje',v:doneToday+'/'+HABITS_DEF.length,c:'var(--a2)'},
+          {l:'Hoje',v:doneToday+'/'+DEFS.list.length,c:'var(--a2)'},
           {l:'Taxa 7 dias',v:Math.round(rate7*100)+'%',c:scoreColor(rate7*100)},
           {l:'Taxa 30 dias',v:Math.round(rate30*100)+'%',c:scoreColor(rate30*100)},
           {l:'Maior sequência',v:maxStreak+'d 🔥',c:'var(--amber)'},
@@ -1373,7 +1458,7 @@ function HabitosPage({habitLog,toggleHabit}){
             <div style={{width:44}}/>
           </div>
         </div>
-        {HABITS_DEF.map(h=>{
+        {DEFS.list.map(h=>{
           const stk=habitStreak(habitLog,h.id);
           return(
             <div key={h.id} className="hrow">
@@ -1447,9 +1532,69 @@ function HabitosPage({habitLog,toggleHabit}){
           ))}
         </div>
       </div>
+
+      <Modal open={manage} onClose={()=>setManage(false)} title="Gerenciar hábitos">
+        {draft&&(
+          <div>
+            <div style={{fontSize:11,color:'var(--t3)',marginBottom:12}}>Emoji · nome · reordenar · excluir. O histórico de dias marcados é preservado.</div>
+            <div style={{display:'flex',flexDirection:'column',gap:6,maxHeight:'50vh',overflowY:'auto'}}>
+              {draft.map((h,i)=>(
+                <div key={h.id} style={{display:'flex',gap:6,alignItems:'center'}}>
+                  <input className="input" style={{width:46,textAlign:'center',padding:'7px 4px'}} value={h.ico} onChange={e=>{const d=draft.slice();d[i]={...h,ico:e.target.value};setDraft(d)}}/>
+                  <input className="input" value={h.name} onChange={e=>{const d=draft.slice();d[i]={...h,name:e.target.value};setDraft(d)}}/>
+                  <button className="btn ghost sm" onClick={()=>mv(i,-1)} disabled={i===0}>↑</button>
+                  <button className="btn ghost sm" onClick={()=>mv(i,1)} disabled={i===draft.length-1}>↓</button>
+                  <button className="btn ghost sm" style={{color:'var(--red)'}} onClick={()=>{if(confirm('Excluir "'+h.name+'"?'))setDraft(draft.filter(x=>x.id!==h.id))}}>🗑</button>
+                </div>
+              ))}
+            </div>
+            <div style={{display:'flex',gap:8,marginTop:14,justifyContent:'space-between'}}>
+              <button className="btn ghost sm" onClick={()=>setDraft(draft.concat([{id:'h'+Date.now().toString(36),name:'',ico:'✅'}]))}>+ Adicionar hábito</button>
+              <button className="btn" onClick={saveManage}>Salvar</button>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }
+function SettingsModal({open,onClose,syncState,onActivate,onDeactivate,onSyncNow,habitLog}){
+  const[pin,setPin]=useState(getSyncKey()||'');
+  return(
+    <Modal open={open} onClose={onClose} title="⚙️ Ajustes">
+      <div style={{display:'flex',flexDirection:'column',gap:18}}>
+        <div>
+          <div className="ct" style={{marginBottom:6}}>Sincronização entre dispositivos</div>
+          <div style={{fontSize:11.5,color:'var(--t2)',lineHeight:1.6,marginBottom:10}}>
+            Com o PIN ativo, conexões (WHOOP/Google) e hábitos ficam salvos no servidor — conecte uma vez e use no celular e no computador. Use o <b>mesmo PIN</b> em todos os aparelhos.
+          </div>
+          <div style={{display:'flex',gap:8}}>
+            <input className="input" type="password" placeholder="PIN secreto (o mesmo do Vercel)" value={pin} onChange={e=>setPin(e.target.value)}/>
+            {syncState.on
+              ?<button className="btn danger sm" onClick={onDeactivate}>Desativar</button>
+              :<button className="btn" onClick={()=>pin.trim()&&onActivate(pin.trim())}>Ativar</button>}
+          </div>
+          <div style={{fontSize:11,marginTop:8,color:syncState.err?'var(--red)':'var(--t3)'}}>
+            {syncState.err?('⚠️ '+syncState.err):syncState.on?(syncState.at?('✓ Sincronizado '+timeAgo(syncState.at)):'Ativado'):'Desativado'}
+            {syncState.on&&<button className="btn ghost sm" style={{marginLeft:8}} onClick={onSyncNow}>Sincronizar agora</button>}
+          </div>
+        </div>
+        <div>
+          <div className="ct" style={{marginBottom:6}}>Backup</div>
+          <button className="btn ghost sm" onClick={()=>{
+            const data={habit_log:habitLog,habit_defs:DEFS.list,exported_at:new Date().toISOString()};
+            const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
+            const a=document.createElement('a');
+            a.href=URL.createObjectURL(blob);
+            a.download='isaac-os-backup-'+todayKey()+'.json';
+            a.click();
+          }}>⬇ Exportar hábitos (JSON)</button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 function StatusBanner({whoop,google,connect}){
   const items=[];
   const gd=google&&google.data;
@@ -1490,6 +1635,11 @@ function App(){
   const gcache=getGoogleCache();
   const[google,setGoogle]=useState(gcache?{loading:false,data:gcache.data,error:null,updatedAt:gcache.at}:{loading:false,data:null,error:null,updatedAt:null});
   const[habitLog,setHabitLog]=useState(loadHabitLog());
+  const[habitDefs,setHabitDefsState]=useState(DEFS.list);
+  const[settingsOpen,setSettingsOpen]=useState(false);
+  const[jew,setJew]=useState(null);
+  const[syncState,setSyncState]=useState({on:!!getSyncKey(),at:null,err:null});
+  function setHabitDefs(list){saveHabitDefs(list);setHabitDefsState(list);syncPushSoon({habit_defs:list,habit_defs_at:Date.now()});}
 
   function toggleHabit(dk,id){
     setHabitLog(prev=>{
@@ -1497,8 +1647,41 @@ function App(){
       if(day[id])delete day[id];else day[id]=1;
       const next={...prev,[dk]:day};
       LSet('habit_log_v2',next);
+      LSet('habit_log_at',Date.now());
+      syncPushSoon({habit_log:next,habit_log_at:Date.now()});
       return next;
     });
+  }
+
+  // Puxa o estado remoto e faz merge (mais novo vence)
+  async function syncNow(showErr){
+    try{
+      const remote=await syncFetch('GET');
+      if(!remote)return;
+      const push={};
+      // hábitos: log
+      const lAt=LS('habit_log_at',0),rAt=remote.habit_log_at||0;
+      if(remote.habit_log&&rAt>lAt){LSet('habit_log_v2',remote.habit_log);LSet('habit_log_at',rAt);setHabitLog(remote.habit_log);}
+      else if(lAt>rAt){push.habit_log=loadHabitLog();push.habit_log_at=lAt;}
+      // hábitos: definições
+      const dAt=LS('habit_defs_at',0),rdAt=remote.habit_defs_at||0;
+      if(remote.habit_defs&&rdAt>dAt){LSet('habit_defs_v1',remote.habit_defs);LSet('habit_defs_at',rdAt);DEFS.list=remote.habit_defs;setHabitDefsState(remote.habit_defs);}
+      else if(dAt>rdAt){push.habit_defs=DEFS.list;push.habit_defs_at=dAt;}
+      // tokens WHOOP
+      const lw=getTokens(),rw=remote.whoop_tokens;
+      if(rw&&(!lw||((rw.saved_at||0)>(lw.saved_at||0)))){saveTokens(rw);fetchWhoop(rw.access_token,true);}
+      else if(lw&&(!rw||((lw.saved_at||0)>(rw.saved_at||0))))push.whoop_tokens=lw;
+      // tokens Google
+      const lg=getGoogleTokens(),rg=remote.google_tokens;
+      if(rg&&(!lg||((rg.saved_at||0)>(lg.saved_at||0)))){saveGoogleTokens(rg);fetchGoogle(rg.access_token,true);}
+      else if(lg&&(!rg||((lg.saved_at||0)>(rg.saved_at||0))))push.google_tokens=lg;
+      if(Object.keys(push).length)await syncFetch('POST',push);
+      setSyncState({on:true,at:Date.now(),err:null});
+    }catch(e){
+      const msg=e.status===401?'PIN incorreto':e.status===503?'Redis não configurado no Vercel':'falha de rede';
+      setSyncState(st=>({...st,err:msg}));
+      if(showErr)alert('Sincronização: '+msg);
+    }
   }
 
   async function fetchWhoop(token,quiet){
@@ -1511,7 +1694,8 @@ function App(){
       if(!r.ok)throw new Error('HTTP '+r.status);
       const data=await r.json();
       if(data._new_tokens&&data._new_tokens.access_token){
-        saveTokens({...stored,...data._new_tokens,saved_at:Date.now()});
+        const tk={...stored,...data._new_tokens,saved_at:Date.now()};
+        saveTokens(tk);syncPushSoon({whoop_tokens:tk});
       }
       saveWhoopCache(data);
       setWhoop({loading:false,data,error:null,updatedAt:Date.now()});
@@ -1530,7 +1714,8 @@ function App(){
       if(!r.ok)throw new Error('HTTP '+r.status);
       const data=await r.json();
       if(data._new_tokens&&data._new_tokens.access_token){
-        saveGoogleTokens({...stored,access_token:data._new_tokens.access_token,saved_at:Date.now()});
+        const tk={...stored,access_token:data._new_tokens.access_token,saved_at:Date.now()};
+        saveGoogleTokens(tk);syncPushSoon({google_tokens:tk});
       }
       saveGoogleCache(data);
       setGoogle({loading:false,data,error:null,updatedAt:Date.now()});
@@ -1584,12 +1769,14 @@ function App(){
 
   useEffect(()=>{
     function onMsg(e){
-      if(e.data&&e.data.type==='WHOOP_AUTH_SUCCESS'){saveTokens(e.data.tokens);fetchWhoop(e.data.tokens.access_token);}
-      if(e.data&&e.data.type==='GOOGLE_AUTH_SUCCESS'){saveGoogleTokens(e.data.tokens);fetchGoogle(e.data.tokens.access_token);}
+      if(e.data&&e.data.type==='WHOOP_AUTH_SUCCESS'){const tk={...e.data.tokens,saved_at:Date.now()};saveTokens(tk);fetchWhoop(tk.access_token);syncPushSoon({whoop_tokens:tk});}
+      if(e.data&&e.data.type==='GOOGLE_AUTH_SUCCESS'){const tk={...e.data.tokens,saved_at:Date.now()};saveGoogleTokens(tk);fetchGoogle(tk.access_token);syncPushSoon({google_tokens:tk});}
     }
     window.addEventListener('message',onMsg);
     const t=getTokens();if(t&&t.access_token)fetchWhoop(t.access_token);
     const g=getGoogleTokens();if(g&&g.access_token)fetchGoogle(g.access_token);
+    if(getSyncKey())syncNow(false);
+    fetchJewish().then(setJew).catch(()=>{});
     const interval=setInterval(()=>{
       const t2=getTokens();if(t2&&t2.access_token)fetchWhoop(t2.access_token,true);
       const g2=getGoogleTokens();if(g2&&g2.access_token)fetchGoogle(g2.access_token,true);
@@ -1652,14 +1839,19 @@ function App(){
         <div className="sbot">
           {wtok&&(
             <div style={{padding:'3px 10px'}}>
-              <button onClick={()=>{clearTokens();setWhoop({loading:false,data:null,error:null,updatedAt:null})}} style={{background:'var(--rbg)',border:'none',borderRadius:6,color:'var(--red)',fontSize:11,padding:'5px 10px',cursor:'pointer',width:'100%'}}>Desconectar WHOOP</button>
+              <button onClick={()=>{clearTokens();syncPushSoon({whoop_tokens:null});setWhoop({loading:false,data:null,error:null,updatedAt:null})}} style={{background:'var(--rbg)',border:'none',borderRadius:6,color:'var(--red)',fontSize:11,padding:'5px 10px',cursor:'pointer',width:'100%'}}>Desconectar WHOOP</button>
             </div>
           )}
           {gtok&&(
             <div style={{padding:'3px 10px'}}>
-              <button onClick={()=>{clearGoogleTokens();setGoogle({loading:false,data:null,error:null,updatedAt:null})}} style={{background:'var(--rbg)',border:'none',borderRadius:6,color:'var(--red)',fontSize:11,padding:'5px 10px',cursor:'pointer',width:'100%'}}>Desconectar Google</button>
+              <button onClick={()=>{clearGoogleTokens();syncPushSoon({google_tokens:null});setGoogle({loading:false,data:null,error:null,updatedAt:null})}} style={{background:'var(--rbg)',border:'none',borderRadius:6,color:'var(--red)',fontSize:11,padding:'5px 10px',cursor:'pointer',width:'100%'}}>Desconectar Google</button>
             </div>
           )}
+          <div className="ni" onClick={()=>setSettingsOpen(true)}>
+            <span className="ico">⚙️</span>Ajustes
+            {syncState.on&&!syncState.err&&<div className="badge g-" style={{marginLeft:'auto'}}>Sync</div>}
+            {syncState.err&&<div className="badge r-" style={{marginLeft:'auto'}}>!</div>}
+          </div>
           <div className="uc">
             <div className="av">IR</div>
             <div style={{minWidth:0}}>
@@ -1676,6 +1868,9 @@ function App(){
           whoop={{...whoop,onRefresh:refreshNow}}
           google={{...google,onRefresh:refreshNow}}
           habitLog={habitLog}
+          jew={jew}
+          habitDefs={habitDefs}
+          setHabitDefs={setHabitDefs}
           toggleHabit={toggleHabit}
           taskAction={taskAction}
           setPage={setPage}
@@ -1689,7 +1884,13 @@ function App(){
             <span>{PAGES[k].ico}</span>{PAGES[k].label}
           </div>
         ))}
+        <div className="mni" onClick={()=>setSettingsOpen(true)}><span>⚙️</span>Ajustes</div>
       </div>
+
+      <SettingsModal open={settingsOpen} onClose={()=>setSettingsOpen(false)} syncState={syncState} habitLog={habitLog}
+        onActivate={(pin)=>{saveSyncKey(pin);setSyncState({on:true,at:null,err:null});syncNow(true);}}
+        onDeactivate={()=>{saveSyncKey(null);setSyncState({on:false,at:null,err:null});}}
+        onSyncNow={()=>syncNow(true)}/>
     </div>
   );
 }
