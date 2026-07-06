@@ -1,13 +1,41 @@
 {
   "version": 2,
   "routes": [
-    { "src": "/callback",        "dest": "/api/callback.js"        },
-    { "src": "/privacy",         "dest": "/api/privacy.js"         },
-    { "src": "/whoop/login",     "dest": "/api/whoop-login.js"     },
-    { "src": "/whoop/data",      "dest": "/api/whoop-data.js"      },
-    { "src": "/google/login",    "dest": "/api/google-login.js"    },
-    { "src": "/google/callback", "dest": "/api/google-callback.js" },
-    { "src": "/google/data",     "dest": "/api/google-data.js"     },
-    { "src": "/(.*)",            "dest": "/api/index.js"           }
+    {
+      "src": "/callback",
+      "dest": "/api/callback.js"
+    },
+    {
+      "src": "/privacy",
+      "dest": "/api/privacy.js"
+    },
+    {
+      "src": "/whoop/login",
+      "dest": "/api/whoop-login.js"
+    },
+    {
+      "src": "/whoop/data",
+      "dest": "/api/whoop-data.js"
+    },
+    {
+      "src": "/google/login",
+      "dest": "/api/google-login.js"
+    },
+    {
+      "src": "/google/callback",
+      "dest": "/api/google-callback.js"
+    },
+    {
+      "src": "/google/data",
+      "dest": "/api/google-data.js"
+    },
+    {
+      "src": "/store",
+      "dest": "/api/store.js"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/api/index.js"
+    }
   ]
 }
