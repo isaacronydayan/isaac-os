@@ -54,6 +54,10 @@
       "dest": "/api/manifest.js"
     },
     {
+      "src": "/ai",
+      "dest": "/api/ai.js"
+    },
+    {
       "src": "/(.*)",
       "dest": "/api/index.js"
     }
