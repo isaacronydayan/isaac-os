@@ -2122,9 +2122,13 @@ function App(){
       if(e.data&&e.data.type==='GOOGLE_AUTH_SUCCESS'){const tk={...e.data.tokens,saved_at:Date.now()};saveGoogleTokens(tk);fetchGoogle(tk.access_token);syncPushSoon({google_tokens:tk});}
     }
     window.addEventListener('message',onMsg);
-    const t=getTokens();if(t&&t.access_token)fetchWhoop(t.access_token);
-    const g=getGoogleTokens();if(g&&g.access_token)fetchGoogle(g.access_token);
-    if(getSyncKey())syncNow(false);
+    (async()=>{
+      // sincroniza ANTES de buscar: o robô da madrugada rotaciona o token do WHOOP,
+      // e o aparelho precisa adotar o token novo antes de tentar usar o antigo
+      if(getSyncKey()){try{await syncNow(false)}catch(e){}}
+      const t=getTokens();if(t&&t.access_token)fetchWhoop(t.access_token);
+      const g=getGoogleTokens();if(g&&g.access_token)fetchGoogle(g.access_token);
+    })();
     fetchJewish().then(setJew).catch(()=>{});
     fetchWeather().then(setWeather).catch(()=>{});
     fetchBrief().then(setBrief).catch(()=>{});
