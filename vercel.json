@@ -1,0 +1,68 @@
+{
+  "version": 2,
+  "routes": [
+    {
+      "src": "/callback",
+      "dest": "/api/callback.js"
+    },
+    {
+      "src": "/privacy",
+      "dest": "/api/privacy.js"
+    },
+    {
+      "src": "/whoop/login",
+      "dest": "/api/whoop.js?mode=login"
+    },
+    {
+      "src": "/whoop/data",
+      "dest": "/api/whoop.js"
+    },
+    {
+      "src": "/google/login",
+      "dest": "/api/google.js?mode=login"
+    },
+    {
+      "src": "/google/callback",
+      "dest": "/api/google.js?mode=callback"
+    },
+    {
+      "src": "/google/data",
+      "dest": "/api/google.js"
+    },
+    {
+      "src": "/store",
+      "dest": "/api/store.js"
+    },
+    {
+      "src": "/brief",
+      "dest": "/api/brief.js"
+    },
+    {
+      "src": "/daily",
+      "dest": "/api/daily.js"
+    },
+    {
+      "src": "/push/subscribe",
+      "dest": "/api/push-subscribe.js"
+    },
+    {
+      "src": "/ai",
+      "dest": "/api/ai.js"
+    },
+    { "handle": "filesystem" },
+    {
+      "src": "/(.*)",
+      "dest": "/api/index.js"
+    }
+  ],
+  "crons": [
+    {
+      "path": "/daily",
+      "schedule": "30 6 * * *"
+    },
+    {
+      "path": "/daily",
+      "schedule": "30 0 * * *"
+    }
+  ]
+}
