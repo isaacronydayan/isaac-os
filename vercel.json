@@ -34,8 +34,38 @@
       "dest": "/api/store.js"
     },
     {
+      "src": "/brief",
+      "dest": "/api/brief.js"
+    },
+    {
+      "src": "/daily",
+      "dest": "/api/daily.js"
+    },
+    {
+      "src": "/push/subscribe",
+      "dest": "/api/push-subscribe.js"
+    },
+    {
+      "src": "/sw.js",
+      "dest": "/api/sw.js"
+    },
+    {
+      "src": "/manifest.json",
+      "dest": "/api/manifest.js"
+    },
+    {
       "src": "/(.*)",
       "dest": "/api/index.js"
+    }
+  ],
+  "crons": [
+    {
+      "path": "/daily",
+      "schedule": "30 6 * * *"
+    },
+    {
+      "path": "/daily",
+      "schedule": "30 0 * * *"
     }
   ]
 }
