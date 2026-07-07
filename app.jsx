@@ -90,6 +90,184 @@ async function fetchJewish(){
 }
 function fmtShort(iso){const d=new Date(iso);return WD[d.getDay()].toLowerCase()+' '+pad2(d.getHours())+':'+pad2(d.getMinutes())}
 
+// ============================ GUIA DO DIA (o que fazer agora) ============================
+function buildGuidance({now,habitLog,defs,events,tasks,rec}){
+  const out=[];
+  const h=now.getHours()+now.getMinutes()/60;
+  const tk=todayKey();
+  const done=id=>habitDone(habitLog,tk,id);
+  const has=id=>defs.some(d=>d.id===id);
+  const evs=events.filter(e=>sameDay(new Date(e.start),now)&&!e.allDay).sort((a,b)=>new Date(a.start)-new Date(b.start));
+  const nowEv=evs.find(e=>new Date(e.start)<=now&&new Date(e.end)>now);
+  const nextEv=evs.find(e=>new Date(e.start)>now);
+  if(nowEv)out.push({i:'📍',t:'Agora: '+nowEv.summary,s:'até '+fmtT(nowEv.end)});
+  else if(nextEv){
+    const mins=Math.round((new Date(nextEv.start)-now)/60000);
+    if(mins<=120)out.push({i:'⏰',t:'Em '+(mins>=60?Math.floor(mins/60)+'h'+pad2(mins%60):mins+'min')+': '+nextEv.summary,s:fmtT(nextEv.start)});
+  }
+  const late=tasks.filter(t=>!t.done&&dueKeyOf(t)&&dueKeyOf(t)<tk).sort((a,b)=>dueKeyOf(a)<dueKeyOf(b)?-1:1);
+  const dueToday=tasks.filter(t=>!t.done&&dueKeyOf(t)===tk);
+  late.slice(0,2).forEach(t=>out.push({i:'⚠️',t:'Resolver: '+t.title,s:'atrasada · '+t.listName}));
+  if(late.length===0)dueToday.slice(0,2).forEach(t=>out.push({i:'✅',t:t.title,s:'vence hoje · '+t.listName}));
+  if(has('shach')&&!done('shach')&&h>=5.5&&h<12)out.push({i:'🙏',t:'Shacharit',s:'janela da manhã'});
+  if(has('minch')&&!done('minch')&&h>=13&&h<18.5)out.push({i:'🙏',t:'Mincha',s:'antes do pôr do sol'});
+  if(has('arvit')&&!done('arvit')&&h>=18.5)out.push({i:'🙏',t:'Arvit',s:'janela da noite'});
+  if(has('ex')&&!done('ex')&&h>=6&&h<22){
+    if(rec!==null&&rec>=75)out.push({i:'💪',t:'Treinar pesado hoje',s:'recovery '+Math.round(rec)+'% — corpo pronto'});
+    else if(rec!==null&&rec<60)out.push({i:'🚶',t:'Treino leve ou descanso',s:'recovery '+Math.round(rec)+'%'});
+    else out.push({i:'🏋️',t:'Exercício ainda não feito',s:''});
+  }
+  if(has('agua')&&!done('agua')&&h>=15)out.push({i:'💧',t:'Bater os 2L de água',s:''});
+  if(has('shema')&&!done('shema')&&h>=21)out.push({i:'🛏️',t:'Kriat Shema + Invisalign',s:'antes de dormir'});
+  if(out.length===0)out.push({i:'🎉',t:'Tudo em dia',s:'aproveita o momento'});
+  return out.slice(0,5);
+}
+
+// ============================ PONTUAÇÃO DO DIA v2 ============================
+function scoreV2({habitLog,defs,tasks,gtok,rec,sleepPerf,strain}){
+  const tk=todayKey();
+  const parts=[];
+  const hd=defs.filter(x=>habitDone(habitLog,tk,x.id)).length;
+  parts.push({l:'Hábitos',v:defs.length?hd/defs.length:0,w:30,d:hd+'/'+defs.length});
+  const dT=tasks.filter(t=>!t.done&&dueKeyOf(t)===tk).length;
+  const oD=tasks.filter(t=>!t.done&&dueKeyOf(t)&&dueKeyOf(t)<tk).length;
+  const doneT=tasks.filter(t=>t.done&&t.completed&&t.completed.slice(0,10)===tk).length;
+  const tot=dT+oD+doneT;
+  if(gtok&&tot>0)parts.push({l:'Tarefas',v:doneT/tot,w:20,d:doneT+'/'+tot});
+  if(sleepPerf!==null&&sleepPerf!==undefined)parts.push({l:'Sono',v:sleepPerf/100,w:20,d:Math.round(sleepPerf)+'%'});
+  if(rec!==null&&rec!==undefined)parts.push({l:'Recovery',v:rec/100,w:20,d:Math.round(rec)+'%'});
+  if(rec!==null&&rec!==undefined&&strain!==null&&strain!==undefined){
+    const target=rec>=66?14:rec>=33?10:6;
+    const bal=1-Math.min(Math.abs(strain-target)/target,1);
+    parts.push({l:'Equilíbrio',v:bal,w:10,d:'strain '+(Math.round(strain*10)/10).toFixed(1)+' · alvo ~'+target});
+  }
+  const tw=parts.reduce((a,x)=>a+x.w,0);
+  const score=Math.round(parts.reduce((a,x)=>a+x.v*x.w,0)/tw*100);
+  return {score,parts};
+}
+
+// ============================ PADRÕES (mineração sem IA) ============================
+function minePatterns(habitLog,defs,wd){
+  const rec=seriesRecovery(wd||{});
+  const str=seriesStrain(wd||{});
+  const out=[];
+  // 1. melhor / pior dia da semana
+  if(rec.length>=14){
+    const by={};
+    rec.forEach(r=>{const w=r.date.getDay();(by[w]=by[w]||[]).push(r.rec)});
+    const avgs=Object.keys(by).filter(k=>by[k].length>=2).map(k=>({w:+k,a:by[k].reduce((x,y)=>x+y,0)/by[k].length,n:by[k].length}));
+    if(avgs.length>=4){
+      avgs.sort((a,b)=>b.a-a.a);
+      const top=avgs[0],bot=avgs[avgs.length-1];
+      if(top.a-bot.a>=6)out.push({i:'📅',t:'Seu recovery costuma ser melhor na '+WD[top.w]+' ('+Math.round(top.a)+'% em média) e pior na '+WD[bot.w]+' ('+Math.round(bot.a)+'%).'});
+    }
+  }
+  // 2. hábito da véspera → recovery do dia seguinte
+  const candidates=['sleep1','ex','nocel','shema','agua'];
+  let best=null;
+  candidates.forEach(id=>{
+    if(!defs.some(d=>d.id===id))return;
+    const on=[],off=[];
+    rec.forEach(r=>{
+      const prev=addDays(r.date,-1);
+      const dk=dayKey(prev);
+      if(!(dk in habitLog))return; // só considera dias em que hábitos foram registrados
+      (habitDone(habitLog,dk,id)?on:off).push(r.rec);
+    });
+    if(on.length>=5&&off.length>=5){
+      const lift=on.reduce((a,b)=>a+b,0)/on.length-off.reduce((a,b)=>a+b,0)/off.length;
+      if(!best||Math.abs(lift)>Math.abs(best.lift))best={id,lift,n:on.length+off.length};
+    }
+  });
+  if(best&&Math.abs(best.lift)>=4){
+    const hb=defs.find(d=>d.id===best.id);
+    out.push({i:best.lift>0?'📈':'📉',t:'Nos dias seguintes a "'+hb.name+'", seu recovery fica em média '+(best.lift>0?'+':'')+Math.round(best.lift)+' pontos '+(best.lift>0?'melhor':'pior')+' ('+best.n+' dias analisados).'});
+  }
+  // 3. strain alto → recovery do dia seguinte
+  if(str.length>=12&&rec.length>=12){
+    const recBy={};rec.forEach(r=>{recBy[dayKey(r.date)]=r.rec});
+    const hi=[],lo=[];
+    str.forEach(c=>{
+      const nx=recBy[dayKey(addDays(c.date,1))];
+      if(nx===undefined)return;
+      if(c.strain>=14)hi.push(nx);else if(c.strain<10)lo.push(nx);
+    });
+    if(hi.length>=4&&lo.length>=4){
+      const dh=hi.reduce((a,b)=>a+b,0)/hi.length,dl=lo.reduce((a,b)=>a+b,0)/lo.length;
+      if(dl-dh>=6)out.push({i:'⚖️',t:'Dias de strain alto (14+) derrubam seu recovery seguinte para ~'+Math.round(dh)+'%, contra ~'+Math.round(dl)+'% após dias leves. Planeje treinos pesados quando puder dormir bem depois.'});
+    }
+  }
+  return out;
+}
+
+// ============================ CLIMA E RESUMO DO MUNDO ============================
+async function fetchWeather(){
+  const c=LS('weather_cache',null);
+  if(c&&Date.now()-c.at<30*60*1000)return c.v;
+  try{
+    const r=await fetch('https://api.open-meteo.com/v1/forecast?latitude=-23.55&longitude=-46.63&current=temperature_2m,weather_code&daily=temperature_2m_max,temperature_2m_min&timezone=America%2FSao_Paulo&forecast_days=1');
+    const j=await r.json();
+    const code=j.current.weather_code;
+    const ico=code===0?'☀️':code<=2?'🌤️':code===3?'☁️':code<=48?'🌫️':code<=67?'🌧️':code<=77?'❄️':code<=82?'🌧️':'⛈️';
+    const v={t:j.current.temperature_2m,max:j.daily.temperature_2m_max[0],min:j.daily.temperature_2m_min[0],ico};
+    LSet('weather_cache',{at:Date.now(),v});
+    return v;
+  }catch{return c?c.v:null}
+}
+async function fetchBrief(){
+  const c=LS('brief_cache',null);
+  if(c&&Date.now()-c.at<30*60*1000)return c.v;
+  try{
+    const r=await fetch('/brief');
+    if(!r.ok)return c?c.v:null;
+    const v=await r.json();
+    LSet('brief_cache',{at:Date.now(),v});
+    return v;
+  }catch{return c?c.v:null}
+}
+
+// ============================ NOTIFICAÇÕES PUSH ============================
+const VAPID_PUBLIC='BIx8FPc2QT6eSMU39bptK0kD8SKvXfzxxWs8QpxGtxJ0fvIWt4lkUbhiqFsCyT_QLVaNXkuBUNLey-MKJhL9XwQ';
+function b64ToU8(s){
+  const pad='='.repeat((4-s.length%4)%4);
+  const b=atob((s+pad).replace(/-/g,'+').replace(/_/g,'/'));
+  const u=new Uint8Array(b.length);
+  for(let i=0;i<b.length;i++)u[i]=b.charCodeAt(i);
+  return u;
+}
+function pushSupport(){
+  const ios=/iphone|ipad|ipod/i.test(navigator.userAgent||'');
+  const standalone=window.matchMedia&&window.matchMedia('(display-mode: standalone)').matches||window.navigator.standalone===true;
+  if(!('serviceWorker' in navigator)||!('PushManager' in window)){
+    return {ok:false,why:ios&&!standalone?'No iPhone: primeiro adicione o site à Tela de Início (Compartilhar → Adicionar à Tela de Início) e abra pelo ícone.':'Este navegador não suporta notificações push.'};
+  }
+  return {ok:true};
+}
+async function enablePush(){
+  const sup=pushSupport();
+  if(!sup.ok)throw new Error(sup.why);
+  if(!getSyncKey())throw new Error('Ative a sincronização (PIN) primeiro — as notificações usam a mesma proteção.');
+  const reg=await navigator.serviceWorker.register('/sw.js');
+  const perm=await Notification.requestPermission();
+  if(perm!=='granted')throw new Error('Permissão de notificação negada.');
+  const sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:b64ToU8(VAPID_PUBLIC)});
+  const r=await fetch('/push/subscribe',{method:'POST',headers:{'X-Sync-Key':getSyncKey(),'Content-Type':'application/json'},body:JSON.stringify({subscription:sub.toJSON()})});
+  if(!r.ok)throw new Error('Servidor recusou ('+r.status+').');
+  LSet('push_on',true);
+  return (await r.json()).devices;
+}
+async function disablePush(){
+  try{
+    const reg=await navigator.serviceWorker.getRegistration('/sw.js');
+    const sub=reg&&await reg.pushManager.getSubscription();
+    if(sub){
+      await fetch('/push/subscribe',{method:'POST',headers:{'X-Sync-Key':getSyncKey()||'','Content-Type':'application/json'},body:JSON.stringify({action:'unsubscribe',endpoint:sub.endpoint})});
+      await sub.unsubscribe();
+    }
+  }catch(e){}
+  LDel('push_on');
+}
+
 // ============================ SINCRONIZAÇÃO (multi-dispositivo) ============================
 function getSyncKey(){return LS('sync_key',null)}
 function saveSyncKey(k){if(k)LSet('sync_key',k);else LDel('sync_key')}
@@ -334,7 +512,7 @@ function TrendTag({t,goodUp}){
 }
 
 // ============================ PÁGINA: HOJE ============================
-function HojePage({whoop,google,habitLog,toggleHabit,taskAction,setPage,connect,jew}){
+function HojePage({whoop,google,habitLog,toggleHabit,taskAction,setPage,connect,jew,weather,brief,habitDefs}){
   const[qa,setQa]=useState('');
   const NOW=new Date();
   const tk=todayKey();
@@ -362,15 +540,10 @@ function HojePage({whoop,google,habitLog,toggleHabit,taskAction,setPage,connect,
   const tLate=tasks.filter(t=>!t.done&&dueKeyOf(t)&&dueKeyOf(t)<tk);
   const tDoneToday=tasks.filter(t=>t.done&&t.completed&&t.completed.slice(0,10)===tk).length;
 
-  // Pontuação do dia (hábitos 40% + tarefas 30% + recovery 30%, renormalizado)
-  const hScore=dayScore(habitLog,tk);
-  const parts=[];
-  parts.push({w:40,v:hScore});
-  const tTot=tToday.length+tLate.length+tDoneToday;
-  if(gtok&&tTot>0)parts.push({w:30,v:tDoneToday/tTot});
-  if(rec!==null)parts.push({w:30,v:rec/100});
-  const totW=parts.reduce((a,p)=>a+p.w,0);
-  const score=Math.round(parts.reduce((a,p)=>a+p.v*p.w,0)/totW*100);
+  // Pontuação do dia v2: hábitos + tarefas + sono + recovery + equilíbrio de treino
+  const sv=scoreV2({habitLog,defs:habitDefs||DEFS.list,tasks,gtok,rec,sleepPerf:ss?ss.sleep_performance_percentage:null,strain});
+  const score=sv.score;
+  const guidance=buildGuidance({now:NOW,habitLog,defs:habitDefs||DEFS.list,events:(gd&&gd.events)||[],tasks,rec});
 
   const ctx=buildContext(wd,gd,habitLog);
   const insights=buildInsights(ctx);
@@ -383,6 +556,7 @@ function HojePage({whoop,google,habitLog,toggleHabit,taskAction,setPage,connect,
         <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:3,flexWrap:'wrap'}}>
           <div className="pt">{greeting()}, Isaac 👋</div>
           {(wtok||gtok)&&<div className="live">{[wtok&&'WHOOP',gtok&&'Google'].filter(Boolean).join(' + ')}</div>}
+          {weather&&<div className="badge z-" style={{fontSize:11,padding:'3px 9px'}}>{weather.ico} {Math.round(weather.t)}°C · {Math.round(weather.min)}–{Math.round(weather.max)}°</div>}
           <RefreshBtn state={whoop||google}/>
         </div>
         <div className="ps" style={{textTransform:'capitalize'}}>{dateStr}{jew&&jew.hebrew?<span style={{textTransform:'none',color:'var(--t3)'}}> · {jew.hebrew}</span>:null}</div>
@@ -392,6 +566,21 @@ function HojePage({whoop,google,habitLog,toggleHabit,taskAction,setPage,connect,
             {nextEv&&<div className="badge b-" style={{fontSize:11,padding:'4px 10px'}}>Próximo: {nextEv.summary} às {fmtT(nextEv.start)}</div>}
           </div>
         )}
+      </div>
+
+      <div className="card" style={{marginBottom:14,background:'linear-gradient(135deg,rgba(99,102,241,.10),rgba(168,85,247,.05))',borderColor:'rgba(99,102,241,.22)'}}>
+        <div className="ct">🎯 Agora</div>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(230px,1fr))',gap:8}}>
+          {guidance.map((g,i)=>(
+            <div key={i} style={{display:'flex',gap:10,alignItems:'flex-start',background:'rgba(0,0,0,.22)',borderRadius:11,padding:'9px 12px'}}>
+              <span style={{fontSize:16}}>{g.i}</span>
+              <div style={{minWidth:0}}>
+                <div style={{fontSize:12.5,fontWeight:700,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{g.t}</div>
+                {g.s&&<div style={{fontSize:10.5,color:'var(--t3)'}}>{g.s}</div>}
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
 
       <div className="g g4" style={{marginBottom:14}}>
@@ -424,18 +613,19 @@ function HojePage({whoop,google,habitLog,toggleHabit,taskAction,setPage,connect,
             {ss&&ss.sleep_consistency_percentage!==undefined&&<div>Consistência {Math.round(ss.sleep_consistency_percentage)}%</div>}
           </div>
         </div>
-        <div className="card" style={{display:'flex',alignItems:'center',gap:16}}>
+        <div className="card" style={{display:'flex',alignItems:'center',gap:14}}>
           <Ring value={score} max={100} size={92} stroke={8} color={scoreColor(score)}>
             <div style={{fontSize:20,fontWeight:800,color:scoreColor(score)}}>{score}</div>
             <div style={{fontSize:8.5,color:'var(--t3)',fontWeight:700}}>/ 100</div>
           </Ring>
-          <div style={{flex:1}}>
-            <div className="ct" style={{marginBottom:6}}>Pontuação do dia</div>
-            <div style={{fontSize:11.5,color:'var(--t2)',lineHeight:1.7}}>
-              <div>Hábitos <b>{doneH}/{DEFS.list.length}</b></div>
-              <div>Tarefas <b>{tDoneToday} feitas</b></div>
-              <div>Corpo <b>{rec!==null?Math.round(rec)+'%':'–'}</b></div>
-            </div>
+          <div style={{flex:1,minWidth:0}}>
+            <div className="ct" style={{marginBottom:7}}>Pontuação do dia</div>
+            {sv.parts.map(pp=>(
+              <div key={pp.l} title={pp.d} style={{display:'flex',alignItems:'center',gap:6,marginBottom:4}}>
+                <div style={{fontSize:9.5,color:'var(--t3)',width:58,fontWeight:600}}>{pp.l}</div>
+                <div className="pbar" style={{flex:1,height:4}}><div className="pf" style={{width:(pp.v*100)+'%',background:scoreColor(pp.v*100)}}/></div>
+              </div>
+            ))}
           </div>
         </div>
       </div>
@@ -557,6 +747,36 @@ function HojePage({whoop,google,habitLog,toggleHabit,taskAction,setPage,connect,
         </div>
       </div>
 
+      {brief&&((brief.quotes&&brief.quotes.length>0)||(brief.news&&brief.news.length>0))&&(
+        <div className="card" style={{marginBottom:14}}>
+          <div className="ct">🌎 Resumo do dia</div>
+          {brief.quotes&&brief.quotes.length>0&&(
+            <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:brief.news&&brief.news.length?14:0}}>
+              {brief.quotes.map(q=>{
+                const up=q.chg>=0;
+                const price=q.fmt==='brl'?'R$ '+q.price.toLocaleString('pt-BR',{maximumFractionDigits:2}):q.fmt==='usd'?'US$ '+Math.round(q.price).toLocaleString('pt-BR'):Math.round(q.price).toLocaleString('pt-BR');
+                return(
+                  <div key={q.label} style={{background:'var(--s2)',borderRadius:10,padding:'7px 11px',minWidth:104}}>
+                    <div style={{fontSize:9.5,color:'var(--t3)',fontWeight:700,textTransform:'uppercase',letterSpacing:.5}}>{q.label}</div>
+                    <div style={{fontSize:13,fontWeight:800,margin:'2px 0'}}>{price}</div>
+                    <div style={{fontSize:10.5,fontWeight:700,color:up?'var(--green)':'var(--red)'}}>{up?'▲':'▼'} {Math.abs(q.chg).toFixed(2).replace('.',',')}%</div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          {brief.news&&brief.news.length>0&&(
+            <div>
+              {brief.news.map((n,i)=>(
+                <a key={i} href={n.link} target="_blank" rel="noreferrer" style={{display:'flex',gap:8,padding:'6px 2px',fontSize:12.5,color:'var(--t2)',textDecoration:'none',borderBottom:i<brief.news.length-1?'1px solid var(--b)':'none'}}>
+                  <span style={{color:'var(--t3)'}}>›</span>{n.t}
+                </a>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {!wtok&&(
         <div className="card">
           <Empty ico="⚡" title="WHOOP não conectado" desc="Conecte para ver recovery, sono, strain e treinos em tempo real" action="Conectar WHOOP" onAction={connect.whoop}/>
@@ -584,7 +804,7 @@ function ZoneBar({z}){
 }
 
 // ============================ PÁGINA: SAÚDE ============================
-function SaudePage({whoop,connect}){
+function SaudePage({whoop,connect,habitLog,habitDefs}){
   const wtok=getTokens();
   const wd=whoop&&whoop.data;
   if(!wtok)return(
@@ -747,6 +967,24 @@ function SaudePage({whoop,connect}){
         </div>
       </div>
 
+      {(()=>{
+        const pats=minePatterns(habitLog||{},habitDefs||DEFS.list,wd);
+        return(
+          <div className="card" style={{marginBottom:14,background:'linear-gradient(135deg,rgba(52,211,153,.06),rgba(99,102,241,.05))',borderColor:'rgba(52,211,153,.16)'}}>
+            <div className="ct">🔎 Padrões descobertos (sem IA — só matemática nos seus dados)</div>
+            {pats.length===0
+              ?<div style={{fontSize:12.5,color:'var(--t2)'}}>Continue marcando os hábitos diariamente — com ~2 semanas de dados os padrões entre hábitos, sono, strain e recovery começam a aparecer aqui.</div>
+              :<div style={{display:'flex',flexDirection:'column',gap:9}}>
+                {pats.map((x,i)=>(
+                  <div key={i} style={{display:'flex',gap:10,alignItems:'flex-start',fontSize:13}}>
+                    <span>{x.i}</span><span style={{color:'var(--t2)'}}>{x.t}</span>
+                  </div>
+                ))}
+              </div>}
+          </div>
+        );
+      })()}
+
       <div className="g g2" style={{marginBottom:14}}>
         <div className="card">
           <div className="ct">🏆 Recordes pessoais (período carregado)</div>
@@ -819,9 +1057,11 @@ function TarefasPage({google,taskAction,connect}){
   function matches(t){
     if(q&&!(t.title.toLowerCase().includes(q.toLowerCase())||(t.notes||'').toLowerCase().includes(q.toLowerCase())))return false;
     const dk=dueKeyOf(t);
-    if(filter==='hoje')return !t.done&&dk===tk;
-    if(filter==='atrasadas')return !t.done&&dk&&dk<tk;
+    if(filter==='hoje')return !t.done&&dk&&dk<=tk;
+    if(filter==='amanha')return !t.done&&dk===dayKey(addDays(new Date(),1));
     if(filter==='semana')return !t.done&&dk&&dk>=tk&&dk<=week;
+    if(filter==='atrasadas')return !t.done&&dk&&dk<tk;
+    if(filter==='semdata')return !t.done&&!dk;
     return true;
   }
 
@@ -833,10 +1073,10 @@ function TarefasPage({google,taskAction,connect}){
   // Agrupa por lista, com subtarefas aninhadas
   function listTasks(listId){
     const all=tasks.filter(t=>t.listId===listId&&matches(t));
-    const tk2=todayKey();
     const parents=all.filter(t=>!t.parent).sort((a,b)=>{
-      const la=!a.done&&dueKeyOf(a)&&dueKeyOf(a)<tk2,lb=!b.done&&dueKeyOf(b)&&dueKeyOf(b)<tk2;
-      if(la!==lb)return la?-1:1;
+      const da=dueKeyOf(a),db=dueKeyOf(b);
+      if(!!da!==!!db)return da?-1:1;          // com data antes de sem data
+      if(da&&db&&da!==db)return da<db?-1:1;   // mais próxima primeiro (atrasadas no topo)
       return (a.position||'').localeCompare(b.position||'');
     });
     const kids={};
@@ -898,7 +1138,7 @@ function TarefasPage({google,taskAction,connect}){
 
       <div style={{display:'flex',gap:10,marginBottom:16,flexWrap:'wrap',alignItems:'center'}}>
         <input className="input" style={{maxWidth:260}} placeholder="🔎 Buscar tarefas…" value={q} onChange={e=>setQ(e.target.value)}/>
-        <Seg options={[{v:'todas',l:'Todas'},{v:'hoje',l:'Hoje'},{v:'semana',l:'Semana'},{v:'atrasadas',l:'Atrasadas'}]} value={filter} onChange={setFilter}/>
+        <Seg options={[{v:'todas',l:'Todas'},{v:'hoje',l:'Hoje'},{v:'amanha',l:'Amanhã'},{v:'semana',l:'Semana'},{v:'atrasadas',l:'Atrasadas'},{v:'semdata',l:'Sem data'}]} value={filter} onChange={setFilter}/>
         <button className="btn sm" style={{marginLeft:'auto'}} onClick={()=>setListModal(true)}>+ Nova lista</button>
       </div>
 
@@ -1367,8 +1607,172 @@ function HabitosPage({habitLog,toggleHabit,habitDefs,setHabitDefs}){
     </div>
   );
 }
+// ============================ PÁGINA: VIDA (relatórios e estatísticas) ============================
+function VidaPage({whoop,google,habitLog,habitDefs,history}){
+  const NOW=new Date();
+  const defs=habitDefs||DEFS.list;
+  const wd=whoop&&whoop.data,gd=google&&google.data;
+  const tasks=(gd&&gd.tasks)||[];
+  const recS=seriesRecovery(wd||{}),slpS=seriesSleep(wd||{}),strS=seriesStrain(wd||{});
+  const workouts=((wd&&wd.workouts&&wd.workouts.records)||[]).filter(w=>w.score);
+
+  const monThis=weekMonday(NOW),monLast=addDays(monThis,-7);
+  function inRange(d,from,days){const x=(d instanceof Date)?d:new Date(d);return x>=from&&x<addDays(from,days)}
+  function habitRateRange(from,days){
+    let done=0,tot=0;
+    for(let i=0;i<days;i++){
+      const d=addDays(from,i);
+      if(d>NOW)break;
+      const dk=dayKey(d);
+      defs.forEach(h=>{tot++;if(habitDone(habitLog,dk,h.id))done++});
+    }
+    return tot?done/tot:null;
+  }
+  function avgRangeD(arr,key,from,days){
+    const xs=arr.filter(r=>inRange(r.date,from,days)).map(r=>r[key]).filter(v=>v!==null&&v!==undefined&&!isNaN(v));
+    return xs.length?xs.reduce((a,b)=>a+b,0)/xs.length:null;
+  }
+  const tasksDone=(from,days)=>tasks.filter(t=>t.done&&t.completed&&inRange(t.completed,from,days)).length;
+  const workoutsIn=(from,days)=>workouts.filter(w=>inRange(w.start,from,days)).length;
+
+  const f0=v=>v===null?'–':Math.round(v)+'';
+  const fp=v=>v===null?'–':Math.round(v)+'%';
+  const f1=v=>v===null?'–':(Math.round(v*10)/10).toFixed(1);
+  const rows=[
+    {l:'Hábitos concluídos',a:habitRateRange(monThis,7),b:habitRateRange(monLast,7),fmt:v=>v===null?'–':Math.round(v*100)+'%',gu:true},
+    {l:'Tarefas concluídas',a:tasksDone(monThis,7),b:tasksDone(monLast,7),fmt:f0,gu:true},
+    {l:'Recovery médio',a:avgRangeD(recS,'rec',monThis,7),b:avgRangeD(recS,'rec',monLast,7),fmt:fp,gu:true},
+    {l:'Sono (performance)',a:avgRangeD(slpS,'perf',monThis,7),b:avgRangeD(slpS,'perf',monLast,7),fmt:fp,gu:true},
+    {l:'Strain médio',a:avgRangeD(strS,'strain',monThis,7),b:avgRangeD(strS,'strain',monLast,7),fmt:f1,gu:null},
+    {l:'Treinos',a:workoutsIn(monThis,7),b:workoutsIn(monLast,7),fmt:f0,gu:true},
+  ];
+
+  // estatísticas de vida
+  const logDays=Object.keys(habitLog);
+  const totalChecks=logDays.reduce((a,dk)=>a+Object.keys(habitLog[dk]||{}).length,0);
+  const perfectDays=logDays.filter(dk=>defs.length&&defs.every(h=>habitDone(habitLog,dk,h.id))).length;
+  const bestStreak=Math.max(...defs.map(h=>habitStreak(habitLog,h.id)),0);
+  const kcalTotal=workouts.reduce((a,w)=>a+kcal(w.score.kilojoule||0),0);
+  const done30=tasks.filter(t=>t.done&&t.completed&&new Date(t.completed)>addDays(NOW,-30)).length;
+
+  // evolução semanal de hábitos (8 semanas)
+  const weekScores=[];
+  for(let w=7;w>=0;w--){
+    const ws=addDays(monThis,-7*w);
+    const r=habitRateRange(ws,7);
+    weekScores.push({l:fmtDM(ws),v:r===null?0:Math.round(r*100)});
+  }
+  const labels=recS.slice(-30).map(r=>fmtDM(r.date));
+
+  return(
+    <div className="page">
+      <div className="ph"><div className="pt">Vida</div><div className="ps">Relatórios e estatísticas de longo prazo</div></div>
+
+      <div className="card" style={{marginBottom:14}}>
+        <div className="ct">📋 Relatório da semana — atual × anterior</div>
+        <table className="tbl">
+          <thead><tr><th>Métrica</th><th>Esta semana</th><th>Anterior</th><th>Δ</th></tr></thead>
+          <tbody>
+            {rows.map(r=>{
+              const t=trend(typeof r.a==='number'?r.a:null,typeof r.b==='number'?r.b:null);
+              const col=!t||r.gu===null?'var(--t3)':(t.up===r.gu?'var(--green)':'var(--red)');
+              return(
+                <tr key={r.l}>
+                  <td style={{color:'var(--t2)',fontWeight:600}}>{r.l}</td>
+                  <td style={{fontWeight:700}}>{r.fmt(r.a)}</td>
+                  <td style={{color:'var(--t3)'}}>{r.fmt(r.b)}</td>
+                  <td style={{color:col,fontWeight:700,fontSize:11}}>{t?(t.up?'▲':'▼')+t.pct+'%':'—'}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+        <div style={{fontSize:10.5,color:'var(--t3)',marginTop:8}}>Semana atual conta só até hoje — os números fecham no domingo.</div>
+      </div>
+
+      <div className="g g4" style={{marginBottom:14}}>
+        {[
+          {l:'Hábitos marcados (total)',v:totalChecks,c:'var(--a2)'},
+          {l:'Dias 100% disciplina',v:perfectDays,c:'var(--green)'},
+          {l:'Maior sequência ativa',v:bestStreak+'d 🔥',c:'var(--amber)'},
+          {l:'Tarefas feitas (30d)',v:done30,c:'var(--violet)'},
+        ].map(m=>(
+          <div key={m.l} className="card"><div className="ct">{m.l}</div><div className="mv" style={{color:m.c}}>{m.v}</div></div>
+        ))}
+      </div>
+
+      <div className="g g4" style={{marginBottom:14}}>
+        {[
+          {l:'Treinos no período',v:workouts.length,c:'var(--orange)'},
+          {l:'Calorias em treinos',v:kcalTotal.toLocaleString('pt-BR')+' kcal',c:'var(--red)'},
+          {l:'Dias com hábitos registrados',v:logDays.length,c:'var(--blue)'},
+          {l:'Hábitos ativos',v:defs.length,c:'var(--cyan)'},
+        ].map(m=>(
+          <div key={m.l} className="card"><div className="ct">{m.l}</div><div className="mv" style={{color:m.c,fontSize:22}}>{m.v}</div></div>
+        ))}
+      </div>
+
+      {(()=>{
+        const keys=history?Object.keys(history).sort():[];
+        if(keys.length===0)return(
+          <div className="card" style={{marginBottom:14,borderColor:'rgba(99,102,241,.2)'}}>
+            <div className="ct">🗄️ Memória permanente</div>
+            <div style={{fontSize:12.5,color:'var(--t2)',lineHeight:1.7}}>
+              Toda madrugada (~3h30), o Isaac OS grava sozinho um resumo do dia anterior — recovery, sono, strain, treinos, hábitos e tarefas — num histórico que nunca expira. O WHOOP só guarda ~50 dias; aqui fica para sempre. O primeiro registro aparece amanhã de manhã.
+            </div>
+          </div>
+        );
+        const last=keys.slice(-90);
+        const H=history;
+        const avg=(k)=>{const xs=last.map(d=>H[d][k]).filter(v=>v!==undefined&&v!==null);return xs.length?Math.round(xs.reduce((a,b)=>a+b,0)/xs.length):null};
+        const habAvg=(()=>{const xs=last.map(d=>H[d].habT?H[d].hab/H[d].habT:null).filter(v=>v!==null);return xs.length?Math.round(xs.reduce((a,b)=>a+b,0)/xs.length*100):null})();
+        const bestRec=keys.reduce((b,d)=>H[d].rec!==undefined&&(!b||H[d].rec>H[b].rec)?d:b,null);
+        return(
+          <div className="card" style={{marginBottom:14}}>
+            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12,flexWrap:'wrap',gap:8}}>
+              <div className="ct" style={{marginBottom:0}}>🗄️ Memória permanente</div>
+              <div className="badge a-">{keys.length} {keys.length===1?'dia registrado':'dias registrados'} · para sempre</div>
+            </div>
+            <div style={{display:'flex',gap:18,flexWrap:'wrap',marginBottom:14}}>
+              {[
+                {l:'Recovery médio',v:avg('rec'),f:v=>v+'%',c:'var(--green)'},
+                {l:'Sono médio',v:avg('slp'),f:v=>v+'%',c:'var(--blue)'},
+                {l:'Hábitos médios',v:habAvg,f:v=>v+'%',c:'var(--a2)'},
+                {l:'Melhor recovery',v:bestRec?H[bestRec].rec:null,f:v=>v+'% ('+fmtDM(bestRec+'T12:00:00')+')',c:'var(--amber)'},
+              ].filter(x=>x.v!==null).map(x=>(
+                <div key={x.l}>
+                  <div style={{fontSize:16,fontWeight:800,color:x.c}}>{x.f(x.v)}</div>
+                  <div style={{fontSize:10,color:'var(--t3)',marginTop:2}}>{x.l} (90d)</div>
+                </div>
+              ))}
+            </div>
+            {last.filter(d=>H[d].rec!==undefined||H[d].slp!==undefined).length>=2&&(
+              <ChartBox labels={last.map(d=>fmtDM(d+'T12:00:00'))} datasets={[
+                ds('Recovery %',last.map(d=>H[d].rec!==undefined?H[d].rec:null),'#34d399'),
+                ds('Sono %',last.map(d=>H[d].slp!==undefined?H[d].slp:null),'#60a5fa'),
+              ]} opts={{spanGaps:true,scales:{y:{min:0,max:100,ticks:{color:'#5f6169',font:{size:9.5}},grid:{color:'rgba(255,255,255,.04)'}},x:{ticks:{color:'#5f6169',font:{size:9.5},maxTicksLimit:10},grid:{color:'rgba(255,255,255,.04)'}}}}}/>
+            )}
+          </div>
+        );
+      })()}
+
+      <div className="g g2">
+        <div className="card">
+          <div className="ct">Disciplina — 8 semanas</div>
+          <ChartBox type="bar" labels={weekScores.map(w=>w.l)} datasets={[{label:'%',data:weekScores.map(w=>w.v),backgroundColor:'rgba(99,102,241,.6)',borderRadius:5}]} opts={{plugins:{legend:{display:false}},scales:{y:{min:0,max:100,ticks:{color:'#5f6169',font:{size:9.5}},grid:{color:'rgba(255,255,255,.04)'}},x:{ticks:{color:'#5f6169',font:{size:9.5}},grid:{display:false}}}}}/>
+        </div>
+        <div className="card">
+          <div className="ct">Recovery — 30 dias</div>
+          {recS.length?<ChartBox labels={labels} datasets={[ds('Recovery %',recS.slice(-30).map(r=>Math.round(r.rec)),'#34d399','rgba(52,211,153,.1)')]} opts={{scales:{y:{min:0,max:100,ticks:{color:'#5f6169',font:{size:9.5}},grid:{color:'rgba(255,255,255,.04)'}},x:{ticks:{color:'#5f6169',font:{size:9.5},maxTicksLimit:8},grid:{color:'rgba(255,255,255,.04)'}}}}}/>:<Empty ico="⚡" title="Sem dados WHOOP" desc="Conecte o WHOOP para ver a evolução"/>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function SettingsModal({open,onClose,syncState,onActivate,onDeactivate,onSyncNow,habitLog}){
   const[pin,setPin]=useState(getSyncKey()||'');
+  const[pushMsg,setPushMsg]=useState('');
   return(
     <Modal open={open} onClose={onClose} title="⚙️ Ajustes">
       <div style={{display:'flex',flexDirection:'column',gap:18}}>
@@ -1387,6 +1791,18 @@ function SettingsModal({open,onClose,syncState,onActivate,onDeactivate,onSyncNow
             {syncState.err?('⚠️ '+syncState.err):syncState.on?(syncState.at?('✓ Sincronizado '+timeAgo(syncState.at)):'Ativado'):'Desativado'}
             {syncState.on&&<button className="btn ghost sm" style={{marginLeft:8}} onClick={onSyncNow}>Sincronizar agora</button>}
           </div>
+        </div>
+        <div>
+          <div className="ct" style={{marginBottom:6}}>Notificações diárias</div>
+          <div style={{fontSize:11.5,color:'var(--t2)',lineHeight:1.6,marginBottom:10}}>
+            Bom dia com seu briefing (~3h30 grava o dia anterior na memória) e lembrete à noite (~21h30) se faltarem hábitos. No iPhone: adicione o site à Tela de Início e abra pelo ícone antes de ativar.
+          </div>
+          <div style={{display:'flex',gap:8,alignItems:'center'}}>
+            {LS('push_on',false)
+              ?<button className="btn danger sm" onClick={async()=>{await disablePush();setPushMsg('Notificações desativadas neste aparelho.')}}>Desativar neste aparelho</button>
+              :<button className="btn sm" onClick={async()=>{try{const n=await enablePush();setPushMsg('✓ Ativas! ('+n+' aparelho'+(n>1?'s':'')+' registrado'+(n>1?'s':'')+')')}catch(e){setPushMsg('⚠️ '+e.message)}}}>🔔 Ativar neste aparelho</button>}
+          </div>
+          {pushMsg&&<div style={{fontSize:11,marginTop:8,color:pushMsg.startsWith('⚠')?'var(--amber)':'var(--t3)'}}>{pushMsg}</div>}
         </div>
         <div>
           <div className="ct" style={{marginBottom:6}}>Backup</div>
@@ -1435,6 +1851,7 @@ const PAGES={
   tarefas:{label:'Tarefas',ico:'✅', comp:TarefasPage},
   agenda: {label:'Agenda', ico:'📅', comp:AgendaPage},
   habitos:{label:'Hábitos',ico:'🔁', comp:HabitosPage},
+  vida:   {label:'Vida',   ico:'📊', comp:VidaPage},
 };
 
 function App(){
@@ -1447,6 +1864,9 @@ function App(){
   const[habitDefs,setHabitDefsState]=useState(DEFS.list);
   const[settingsOpen,setSettingsOpen]=useState(false);
   const[jew,setJew]=useState(null);
+  const[weather,setWeather]=useState(null);
+  const[brief,setBrief]=useState(null);
+  const[history,setHistory]=useState(null);
   const[syncState,setSyncState]=useState({on:!!getSyncKey(),at:null,err:null});
   function setHabitDefs(list){saveHabitDefs(list);setHabitDefsState(list);syncPushSoon({habit_defs:list,habit_defs_at:Date.now()});}
 
@@ -1467,6 +1887,7 @@ function App(){
     try{
       const remote=await syncFetch('GET');
       if(!remote)return;
+      if(remote.history)setHistory(remote.history);
       const push={};
       // hábitos: log
       const lAt=LS('habit_log_at',0),rAt=remote.habit_log_at||0;
@@ -1586,6 +2007,8 @@ function App(){
     const g=getGoogleTokens();if(g&&g.access_token)fetchGoogle(g.access_token);
     if(getSyncKey())syncNow(false);
     fetchJewish().then(setJew).catch(()=>{});
+    fetchWeather().then(setWeather).catch(()=>{});
+    fetchBrief().then(setBrief).catch(()=>{});
     const interval=setInterval(()=>{
       const t2=getTokens();if(t2&&t2.access_token)fetchWhoop(t2.access_token,true);
       const g2=getGoogleTokens();if(g2&&g2.access_token)fetchGoogle(g2.access_token,true);
@@ -1678,6 +2101,9 @@ function App(){
           google={{...google,onRefresh:refreshNow}}
           habitLog={habitLog}
           jew={jew}
+          weather={weather}
+          brief={brief}
+          history={history}
           habitDefs={habitDefs}
           setHabitDefs={setHabitDefs}
           toggleHabit={toggleHabit}
