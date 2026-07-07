@@ -395,6 +395,42 @@ function buildContext(whoopData,googleData,habitLog){
   };
 }
 
+// Contexto rico para a IA: tudo que ela precisa saber, compacto
+function buildAIContext(whoopData,googleData,habitLog,history){
+  const base=buildContext(whoopData,googleData,habitLog);
+  const tk=todayKey();
+  const compactTask=t=>({t:t.title,due:dueKeyOf(t),lista:t.listName});
+  const tasks=(googleData&&googleData.tasks)||[];
+  const evs=((googleData&&googleData.events)||[]).filter(e=>new Date(e.start)>=addDays(new Date(),-1)).slice(0,15).map(e=>({t:e.summary,inicio:e.start,fim:e.end}));
+  const hist=history||{};
+  const hkeys=Object.keys(hist).sort().slice(-60);
+  return {
+    agora:new Date().toString(),
+    corpo_hoje:base.whoop.today_recovery,
+    sono_ultima_noite:base.whoop.last_sleep?{performance:base.whoop.last_sleep.sleep_performance_percentage,consistencia:base.whoop.last_sleep.sleep_consistency_percentage}:null,
+    series_30d:base.whoop.series,
+    recordes:base.whoop.records,
+    habitos:{
+      definicoes:DEFS.list.map(h=>h.name),
+      hoje_feitos:DEFS.list.filter(h=>habitDone(habitLog,tk,h.id)).map(h=>h.name),
+      sequencias:base.habits.streaks.map(x=>({nome:x.name,dias_seguidos:x.streak,taxa_30d:Math.round(x.rate30*100)+'%'})),
+    },
+    tarefas:{
+      atrasadas:tasks.filter(t=>!t.done&&dueKeyOf(t)&&dueKeyOf(t)<tk).slice(0,15).map(compactTask),
+      hoje:tasks.filter(t=>!t.done&&dueKeyOf(t)===tk).slice(0,15).map(compactTask),
+      proximas:tasks.filter(t=>!t.done&&dueKeyOf(t)&&dueKeyOf(t)>tk).slice(0,15).map(compactTask),
+      sem_data:tasks.filter(t=>!t.done&&!dueKeyOf(t)).length,
+      concluidas_7d:tasks.filter(t=>t.done&&t.completed&&new Date(t.completed)>addDays(new Date(),-7)).length,
+    },
+    agenda_proximos:evs,
+    memoria_permanente:{
+      dias_registrados:Object.keys(hist).length,
+      ultimos_60d:hkeys.map(d=>({dia:d,...hist[d]})),
+    },
+    padroes_detectados:minePatterns(habitLog,DEFS.list,whoopData).map(x=>x.t),
+  };
+}
+
 // ============================ INSIGHTS automáticos ============================
 function buildInsights(ctx){
   const out=[];
@@ -1770,7 +1806,72 @@ function VidaPage({whoop,google,habitLog,habitDefs,history}){
   );
 }
 
-function SettingsModal({open,onClose,syncState,onActivate,onDeactivate,onSyncNow,habitLog}){
+// ============================ IA: CHAT ============================
+const AI_SUGGESTIONS=['Como foi minha semana?','O que devo priorizar agora?','Analisa meu sono e me dá 2 conselhos','Que padrões você vê nos meus dados?'];
+function ChatSheet({open,onClose,ctxBuilder}){
+  const[msgs,setMsgs]=useState(LS('ai_chat',[]));
+  const[input,setInput]=useState('');
+  const[busy,setBusy]=useState(false);
+  const boxRef=useRef(null);
+  useEffect(()=>{if(boxRef.current)boxRef.current.scrollTop=boxRef.current.scrollHeight},[msgs,busy,open]);
+  useEffect(()=>{
+    if(!open)return;
+    function onKey(e){if(e.key==='Escape')onClose()}
+    document.addEventListener('keydown',onKey);
+    return()=>document.removeEventListener('keydown',onKey);
+  },[open]);
+  if(!open)return null;
+  async function send(qRaw){
+    const q=(qRaw!==undefined?qRaw:input).trim();
+    if(!q||busy)return;
+    const m=msgs.concat([{r:'u',t:q}]);
+    setMsgs(m);LSet('ai_chat',m);setInput('');setBusy(true);
+    let t;
+    try{
+      const r=await fetch('/ai',{method:'POST',headers:{'Content-Type':'application/json','X-Sync-Key':getSyncKey()||''},body:JSON.stringify({question:q,context:ctxBuilder(),history:m.slice(-7,-1)})});
+      const j=await r.json();
+      if(j.answer)t=j.answer;
+      else if(j.error==='missing_key')t='Falta a chave do Gemini no Vercel. É grátis: entra em aistudio.google.com/apikey, cria a chave com sua conta Google, e adiciona como GEMINI_API_KEY nas Environment Variables (+ redeploy).';
+      else if(j.error==='invalid_key'||r.status===401)t='Ativa a sincronização (PIN) nos ⚙️ Ajustes primeiro — a IA usa a mesma proteção.';
+      else if(j.error==='rate_limit')t='Limite gratuito do minuto atingido — espera ~1 minuto e tenta de novo.';
+      else t='Erro: '+(j.detail||j.error||r.status);
+    }catch(e){t='Sem conexão com a IA agora ('+e.message+').';}
+    const m2=m.concat([{r:'a',t}]);
+    setMsgs(m2);LSet('ai_chat',m2);setBusy(false);
+  }
+  return(
+    <div className="sheet">
+      <div style={{display:'flex',alignItems:'center',gap:10,padding:'14px 16px',borderBottom:'1px solid var(--b)'}}>
+        <span style={{fontSize:18}}>✨</span>
+        <div style={{flex:1}}>
+          <div style={{fontSize:14,fontWeight:800}}>IA do Isaac OS</div>
+          <div style={{fontSize:10,color:'var(--t3)'}}>Gemini · enxerga todos os seus dados</div>
+        </div>
+        {msgs.length>0&&<button className="btn ghost sm" onClick={()=>{setMsgs([]);LDel('ai_chat')}}>Limpar</button>}
+        <button className="btn ghost sm" onClick={onClose}>✕</button>
+      </div>
+      <div ref={boxRef} style={{flex:1,overflowY:'auto',padding:16,display:'flex',flexDirection:'column',gap:10}}>
+        {msgs.length===0&&(
+          <div style={{margin:'auto 0',textAlign:'center'}}>
+            <div style={{fontSize:34,marginBottom:10}}>✨</div>
+            <div style={{fontSize:13,color:'var(--t2)',marginBottom:16}}>Pergunta qualquer coisa sobre sua saúde, hábitos, tarefas ou agenda — eu enxergo tudo, inclusive a memória permanente.</div>
+            <div style={{display:'flex',flexWrap:'wrap',gap:8,justifyContent:'center'}}>
+              {AI_SUGGESTIONS.map(sg=><div key={sg} className="chip" onClick={()=>send(sg)}>{sg}</div>)}
+            </div>
+          </div>
+        )}
+        {msgs.map((m,i)=><div key={i} className={'msg '+(m.r==='u'?'u':'a')}>{m.t}</div>)}
+        {busy&&<div className="msg a" style={{color:'var(--t3)'}}>Analisando seus dados…</div>}
+      </div>
+      <div style={{display:'flex',gap:8,padding:'12px 14px',borderTop:'1px solid var(--b)'}}>
+        <input className="input" placeholder="Pergunte à IA…" value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')send()}} disabled={busy}/>
+        <button className="btn" onClick={()=>send()} disabled={busy}>➤</button>
+      </div>
+    </div>
+  );
+}
+
+function SettingsModal({open,onClose,syncState,onActivate,onDeactivate,onSyncNow,habitLog,pushPrefs,setPushPrefs}){
   const[pin,setPin]=useState(getSyncKey()||'');
   const[pushMsg,setPushMsg]=useState('');
   return(
@@ -1803,6 +1904,20 @@ function SettingsModal({open,onClose,syncState,onActivate,onDeactivate,onSyncNow
               :<button className="btn sm" onClick={async()=>{try{const n=await enablePush();setPushMsg('✓ Ativas! ('+n+' aparelho'+(n>1?'s':'')+' registrado'+(n>1?'s':'')+')')}catch(e){setPushMsg('⚠️ '+e.message)}}}>🔔 Ativar neste aparelho</button>}
           </div>
           {pushMsg&&<div style={{fontSize:11,marginTop:8,color:pushMsg.startsWith('⚠')?'var(--amber)':'var(--t3)'}}>{pushMsg}</div>}
+          <div style={{display:'flex',flexDirection:'column',gap:6,marginTop:12}}>
+            {[
+              {k:'morning',l:'☀️ Bom dia (~3h30 é gravado, chega de manhã)',d:'briefing do dia'},
+              {k:'evening',l:'🌙 Lembrete da noite (~21h30)',d:'só se faltarem hábitos'},
+            ].map(o=>(
+              <div key={o.k} className="task" style={{padding:'6px 8px'}} onClick={()=>setPushPrefs({...pushPrefs,[o.k]:!pushPrefs[o.k]})}>
+                <div className={'cb '+(pushPrefs[o.k]?'done':'')}>
+                  {pushPrefs[o.k]&&<svg width="9" height="7" viewBox="0 0 9 7"><path d="M1 3.5l2.5 2.5 4.5-5" stroke="#fff" strokeWidth="1.7" fill="none" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+                </div>
+                <div><div className="tt">{o.l}</div><div style={{fontSize:10,color:'var(--t3)'}}>{o.d}</div></div>
+              </div>
+            ))}
+            <div style={{fontSize:10.5,color:'var(--t3)'}}>Máximo absoluto: 2 notificações por dia. Sem spam, prometido.</div>
+          </div>
         </div>
         <div>
           <div className="ct" style={{marginBottom:6}}>Backup</div>
@@ -1863,10 +1978,13 @@ function App(){
   const[habitLog,setHabitLog]=useState(loadHabitLog());
   const[habitDefs,setHabitDefsState]=useState(DEFS.list);
   const[settingsOpen,setSettingsOpen]=useState(false);
+  const[aiOpen,setAiOpen]=useState(false);
   const[jew,setJew]=useState(null);
   const[weather,setWeather]=useState(null);
   const[brief,setBrief]=useState(null);
   const[history,setHistory]=useState(null);
+  const[pushPrefs,setPushPrefsState]=useState({morning:true,evening:true});
+  function setPushPrefs(p2){setPushPrefsState(p2);syncPushSoon({push_prefs:p2});}
   const[syncState,setSyncState]=useState({on:!!getSyncKey(),at:null,err:null});
   function setHabitDefs(list){saveHabitDefs(list);setHabitDefsState(list);syncPushSoon({habit_defs:list,habit_defs_at:Date.now()});}
 
@@ -1888,6 +2006,7 @@ function App(){
       const remote=await syncFetch('GET');
       if(!remote)return;
       if(remote.history)setHistory(remote.history);
+      if(remote.push_prefs)setPushPrefsState(remote.push_prefs);
       const push={};
       // hábitos: log
       const lAt=LS('habit_log_at',0),rAt=remote.habit_log_at||0;
@@ -2122,7 +2241,10 @@ function App(){
         <div className="mni" onClick={()=>setSettingsOpen(true)}><span>⚙️</span>Ajustes</div>
       </div>
 
-      <SettingsModal open={settingsOpen} onClose={()=>setSettingsOpen(false)} syncState={syncState} habitLog={habitLog}
+      {!aiOpen&&<div className="fab" title="IA do Isaac OS" onClick={()=>setAiOpen(true)}>✨</div>}
+      <ChatSheet open={aiOpen} onClose={()=>setAiOpen(false)} ctxBuilder={()=>buildAIContext(whoop.data,google.data,habitLog,history)}/>
+
+      <SettingsModal open={settingsOpen} onClose={()=>setSettingsOpen(false)} syncState={syncState} habitLog={habitLog} pushPrefs={pushPrefs} setPushPrefs={setPushPrefs}
         onActivate={(pin)=>{saveSyncKey(pin);setSyncState({on:true,at:null,err:null});syncNow(true);}}
         onDeactivate={()=>{saveSyncKey(null);setSyncState({on:false,at:null,err:null});}}
         onSyncNow={()=>syncNow(true)}/>
