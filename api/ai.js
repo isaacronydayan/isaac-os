@@ -58,11 +58,19 @@ export default async function handler(req, res) {
   });
   contents.push({ role: 'user', parts: [{ text: question.trim().slice(0, 2000) }] });
 
-  const payload = JSON.stringify({
-    system_instruction: { parts: [{ text: system }] },
-    contents,
-    generationConfig: { temperature: 0.4, maxOutputTokens: 900 },
-  });
+  // maxOutputTokens alto: os modelos 2.5/3.x "pensam" antes de responder e os
+  // tokens de raciocínio contam nesse limite — com 900 a resposta saía cortada.
+  // A concisão é garantida pelo prompt (~10 linhas), não pelo teto de tokens.
+  function buildPayload(model) {
+    var gen = { temperature: 0.4, maxOutputTokens: 4000 };
+    // Nos modelos 2.5 dá pra desligar o "pensamento" e economizar tokens/latência.
+    if (model.indexOf('gemini-2.5') === 0) gen.thinkingConfig = { thinkingBudget: 0 };
+    return JSON.stringify({
+      system_instruction: { parts: [{ text: system }] },
+      contents,
+      generationConfig: gen,
+    });
+  }
 
   // Monta a fila de modelos: env var opcional primeiro, depois a lista padrão.
   var queue = MODELS.slice();
@@ -77,7 +85,7 @@ export default async function handler(req, res) {
       const r = await fetch('https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent?key=' + process.env.GEMINI_API_KEY, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: payload,
+        body: buildPayload(model),
       });
       if (r.status === 429) return res.status(200).json({ error: 'rate_limit' });
       const j = await r.json();
@@ -86,7 +94,7 @@ export default async function handler(req, res) {
         if (isModelGone(r.status, j)) { lastErr = { error: 'gemini_' + r.status, detail: (j && j.error && j.error.message) || model, model: model }; continue; }
         return res.status(200).json({ error: 'gemini_' + r.status, detail: j?.error?.message, model: model });
       }
-      const answer = (j?.candidates?.[0]?.content?.parts || []).map(p => p.text || '').join('').trim();
+      const answer = (j?.candidates?.[0]?.content?.parts || []).filter(p => !p.thought).map(p => p.text || '').join('').trim();
       if (!answer) { lastErr = { error: 'resposta_vazia', model: model }; continue; }
       return res.status(200).json({ answer, model: model });
     } catch (e) {
