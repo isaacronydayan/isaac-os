@@ -3,6 +3,6 @@
   "short_name": "Isaac OS",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#08090b",
-  "theme_color": "#08090b"
+  "background_color": "#050a1a",
+  "theme_color": "#050a1a"
 }
