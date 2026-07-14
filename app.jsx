@@ -59,6 +59,9 @@ function getTokens(){return LS('whoop_tokens',null)}
 function saveTokens(t){LSet('whoop_tokens',t)}
 function clearTokens(){LDel('whoop_tokens');LDel('whoop_cache')}
 function getWhoopCache(){return LS('whoop_cache',null)}
+// Travas anti-concorrência: dois fetchs simultâneos com o mesmo refresh token
+// invalidavam a sessão do WHOOP (refresh token é de uso único).
+let _wBusy=false,_gBusy=false;
 function saveWhoopCache(data){LSet('whoop_cache',{data,at:Date.now()})}
 function getGoogleTokens(){return LS('google_tokens',null)}
 function saveGoogleTokens(t){LSet('google_tokens',t)}
@@ -793,7 +796,7 @@ function HojePage({whoop,google,habitLog,toggleHabit,taskAction,setPage,connect,
                 const price=q.fmt==='brl'?'R$ '+q.price.toLocaleString('pt-BR',{maximumFractionDigits:2}):q.fmt==='usd'?'US$ '+Math.round(q.price).toLocaleString('pt-BR'):Math.round(q.price).toLocaleString('pt-BR');
                 return(
                   <div key={q.label} style={{background:'var(--s2)',borderRadius:10,padding:'7px 11px',minWidth:104}}>
-                    <div style={{fontSize:9.5,color:'var(--t3)',fontWeight:700,textTransform:'uppercase',letterSpacing:.5}}>{q.label}</div>
+                    <div style={{fontSize:9.5,color:'var(--t3)',fontWeight:700,textTransform:'uppercase',letterSpacing:.5}}>{q.label}{q.stale&&<span style={{fontWeight:500,textTransform:'none',letterSpacing:0,marginLeft:4,opacity:.7}}>ant.</span>}</div>
                     <div style={{fontSize:13,fontWeight:800,margin:'2px 0'}}>{price}</div>
                     <div style={{fontSize:10.5,fontWeight:700,color:up?'var(--green)':'var(--red)'}}>{up?'▲':'▼'} {Math.abs(q.chg).toFixed(2).replace('.',',')}%</div>
                   </div>
@@ -860,8 +863,54 @@ function SaudePage({whoop,connect,habitLog,habitDefs}){
   const need=ss&&ss.sleep_needed;
   const recS=seriesRecovery(wd||{}),slpS=seriesSleep(wd||{}),strS=seriesStrain(wd||{});
   const prs=personalRecords(wd||{});
-  const workouts=((wd&&wd.workouts&&wd.workouts.records)||[]).filter(w=>w.score).slice(0,8);
+  const workouts=((wd&&wd.workouts&&wd.workouts.records)||[]).filter(w=>w.score).slice(0,12);
   const body=wd&&wd.body&&!wd.body._error?wd.body:null;
+
+  // ===== Esforço & treinos: derivações =====
+  const allWo=((wd&&wd.workouts&&wd.workouts.records)||[]).filter(w=>w.score);
+  const durMs=w=>new Date(w.end)-new Date(w.start);
+  const sumBy=(arr,f)=>arr.reduce((a,x)=>a+f(x),0);
+  const nowD=new Date();
+  const wkStart=(d)=>{const x=new Date(d);x.setHours(0,0,0,0);x.setDate(x.getDate()-x.getDay());return x};
+  const w0=wkStart(nowD),w0end=new Date(w0.getTime()+7*864e5),w1=new Date(w0.getTime()-7*864e5);
+  const curWk=allWo.filter(w=>{const t=new Date(w.start);return t>=w0&&t<w0end});
+  const prevWk=allWo.filter(w=>{const t=new Date(w.start);return t>=w1&&t<w0});
+  const wkStats=(arr)=>({n:arr.length,ms:sumBy(arr,durMs),kcal:Math.round(sumBy(arr,w=>w.score.kilojoule||0)/4.184),str:arr.length?sumBy(arr,w=>w.score.strain||0)/arr.length:null});
+  const swk=wkStats(curWk),pwk=wkStats(prevWk);
+  const wo30=allWo.filter(w=>nowD-new Date(w.start)<30*864e5);
+  // por modalidade
+  const bySport={};
+  wo30.forEach(w=>{const k=sportName(w);const b=bySport[k]=bySport[k]||{n:0,ms:0,kcal:0,str:0,ico:sportIcon(w)};b.n++;b.ms+=durMs(w);b.kcal+=(w.score.kilojoule||0)/4.184;b.str+=w.score.strain||0});
+  const sports=Object.keys(bySport).map(k=>({k,...bySport[k],avgStr:bySport[k].str/bySport[k].n})).sort((a,b)=>b.ms-a.ms);
+  const maxSportMs=sports.length?sports[0].ms:1;
+  // zonas de FC (30d)
+  const zsum=[0,0,0,0,0];
+  wo30.forEach(w=>{const z=w.score.zone_duration||{};zsum[0]+=z.zone_one_milli||0;zsum[1]+=z.zone_two_milli||0;zsum[2]+=z.zone_three_milli||0;zsum[3]+=z.zone_four_milli||0;zsum[4]+=z.zone_five_milli||0});
+  const ztot=zsum.reduce((a,b)=>a+b,0);
+  const zMeta=[{l:'Z1',c:'#4b5563'},{l:'Z2',c:'#60a5fa'},{l:'Z3',c:'#34d399'},{l:'Z4',c:'#fbbf24'},{l:'Z5',c:'#f87171'}];
+  const hardPct=ztot?Math.round((zsum[3]+zsum[4])/ztot*100):null;
+  // insights de esforço (matemática pura)
+  const effIns=[];
+  if(wo30.length>=4){
+    const dow=[0,0,0,0,0,0,0];wo30.forEach(w=>dow[new Date(w.start).getDay()]++);
+    const bi=dow.indexOf(Math.max.apply(null,dow));
+    effIns.push({i:'📅',t:'Seu dia de treino é '+['domingo','segunda','terça','quarta','quinta','sexta','sábado'][bi]+': '+dow[bi]+' dos '+wo30.length+' treinos do mês.'});
+  }
+  if(wo30.length){
+    effIns.push({i:'⏱️',t:'Treino médio de '+hmFromMs(sumBy(wo30,durMs)/wo30.length)+' · ritmo de '+(wo30.length/(30/7)).toFixed(1)+' treinos/semana no mês.'});
+  }
+  const woDaySet={};wo30.forEach(w=>{woDaySet[dayKey(new Date(w.start))]=1});
+  const sWith=[],sWithout=[];
+  strS.slice(-30).forEach(r=>{(woDaySet[dayKey(r.date)]?sWith:sWithout).push(r.strain)});
+  if(sWith.length>=3&&sWithout.length>=3){
+    const m=a=>a.reduce((x,y)=>x+y,0)/a.length;
+    effIns.push({i:'🔥',t:'Strain médio '+m(sWith).toFixed(1)+' em dia de treino vs '+m(sWithout).toFixed(1)+' sem treino — o treino é o motor do seu esforço diário.'});
+  }
+  if(hardPct!==null&&ztot>30*60000)effIns.push({i:'❤️',t:hardPct+'% do tempo de treino do mês em zona alta (Z4–Z5)'+(hardPct<15?' — dá pra apertar um pouco mais nos dias verdes.':hardPct>40?' — intensidade alta; garanta recuperação.':' — boa dose de intensidade.')});
+  // recovery alinhado por dia p/ gráfico combinado
+  const recByDay={};recS.forEach(r=>{recByDay[dayKey(r.date)]=Math.round(r.rec)});
+  const comboRec=strS.slice(-30).map(r=>recByDay[dayKey(r.date)]!==undefined?recByDay[dayKey(r.date)]:null);
+  const dlt=(a,b,f)=>{if(a===null||b===null||!b)return null;const p=Math.round((a-b)/b*100);return (p>=0?'+':'')+p+'%'};
 
   // Médias 7d vs 7d anteriores vs 30d
   function rowAvg(arr,key,fmt){
@@ -971,8 +1020,12 @@ function SaudePage({whoop,connect,habitLog,habitDefs}){
           <ChartBox labels={labels} datasets={[ds('HRV (ms)',recS.slice(-30).map(r=>Math.round(r.hrv)),'#a78bfa'),ds('RHR (bpm)',recS.slice(-30).map(r=>Math.round(r.rhr)),'#60a5fa')]}/>
         </div>
         <div className="card">
-          <div className="ct">Strain — 30 dias</div>
-          <ChartBox type="bar" labels={stLabels} datasets={[{label:'Strain',data:strS.slice(-30).map(r=>Math.round(r.strain*10)/10),backgroundColor:'rgba(251,146,60,.55)',borderRadius:4}]} opts={{plugins:{legend:{display:false}}}}/>
+          <div className="ct">💪 Esforço × Capacidade — 30 dias</div>
+          <ChartBox type="bar" labels={stLabels} datasets={[
+            {label:'Strain',data:strS.slice(-30).map(r=>Math.round(r.strain*10)/10),backgroundColor:'rgba(251,146,60,.55)',borderRadius:4,yAxisID:'y'},
+            {type:'line',label:'Recovery %',data:comboRec,borderColor:'#34d399',backgroundColor:'#34d399',tension:.35,pointRadius:0,pointHoverRadius:4,borderWidth:2,spanGaps:true,yAxisID:'y1'}
+          ]} opts={{scales:{y:{min:0,max:21,ticks:{color:'#5f6169',font:{size:9.5}},grid:{color:'rgba(255,255,255,.04)'}},y1:{position:'right',min:0,max:100,ticks:{color:'#34d39988',font:{size:9.5}},grid:{drawOnChartArea:false}},x:{ticks:{color:'#5f6169',font:{size:9.5},maxTicksLimit:8},grid:{color:'rgba(255,255,255,.04)'}}}}}/>
+          <div style={{fontSize:10.5,color:'var(--t3)',marginTop:6}}>Barras = strain do dia · linha = recovery. O ideal: barras altas nos dias em que a linha está alta.</div>
         </div>
       </div>
 
@@ -1023,6 +1076,81 @@ function SaudePage({whoop,connect,habitLog,habitDefs}){
 
       <div className="g g2" style={{marginBottom:14}}>
         <div className="card">
+          <div className="ct">💪 Esta semana de treino <span style={{fontWeight:500,textTransform:'none',letterSpacing:0,color:'var(--t3)'}}>vs anterior</span></div>
+          {swk.n===0&&pwk.n===0?<Empty ico="🏋️" title="Sem treinos ainda" desc="Registre um treino no WHOOP e ele aparece aqui"/>:(
+            <div>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:12}}>
+                {[
+                  {l:'Treinos',v:swk.n,p:pwk.n,f:x=>x},
+                  {l:'Tempo',v:swk.ms,p:pwk.ms,f:hmFromMs},
+                  {l:'Calorias',v:swk.kcal,p:pwk.kcal,f:x=>Math.round(x)+' kcal'},
+                  {l:'Strain médio',v:swk.str,p:pwk.str,f:x=>x!==null?x.toFixed(1):'–'},
+                ].map(x=>{
+                  const d=dlt(x.v,x.p);
+                  return(
+                    <div key={x.l} style={{background:'var(--s2)',borderRadius:10,padding:'10px 12px'}}>
+                      <div style={{fontSize:10,color:'var(--t3)',fontWeight:700,textTransform:'uppercase',letterSpacing:.6,marginBottom:4}}>{x.l}</div>
+                      <div style={{fontSize:17,fontWeight:800,color:'var(--orange)'}}>{x.v!==null?x.f(x.v):'–'}</div>
+                      <div style={{fontSize:10,color:'var(--t3)',marginTop:2}}>ant.: {x.p!==null?x.f(x.p):'–'}{d?<span style={{marginLeft:5,fontWeight:700,color:d.startsWith('+')?'var(--green)':'var(--red)'}}>{d}</span>:null}</div>
+                    </div>
+                  );
+                })}
+              </div>
+              {effIns.length>0&&(
+                <div style={{display:'flex',flexDirection:'column',gap:8}}>
+                  {effIns.map((x,i)=>(
+                    <div key={i} style={{display:'flex',gap:9,alignItems:'flex-start',fontSize:12.5}}>
+                      <span>{x.i}</span><span style={{color:'var(--t2)',lineHeight:1.5}}>{x.t}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+        <div className="card">
+          <div className="ct">🏅 Por modalidade — 30 dias</div>
+          {sports.length===0?<Empty ico="🏅" title="Sem treinos no mês" desc="Seus esportes aparecem aqui com tempo, treinos e strain"/>:(
+            <div style={{display:'flex',flexDirection:'column',gap:11,maxHeight:300,overflowY:'auto'}}>
+              {sports.map(s=>(
+                <div key={s.k}>
+                  <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:4}}>
+                    <span style={{fontSize:15}}>{s.ico}</span>
+                    <span style={{fontSize:12.5,fontWeight:700,flex:1}}>{s.k}</span>
+                    <span style={{fontSize:11,color:'var(--t3)'}}>{s.n}× · {hmFromMs(s.ms)} · {Math.round(s.kcal)} kcal · strain {s.avgStr.toFixed(1)}</span>
+                  </div>
+                  <div style={{height:6,borderRadius:3,background:'var(--s2)',overflow:'hidden'}}>
+                    <div style={{width:Math.max(4,s.ms/maxSportMs*100)+'%',height:'100%',borderRadius:3,background:'linear-gradient(90deg,#fb923c,#f87171)'}}/>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="g g2" style={{marginBottom:14}}>
+        <div className="card">
+          <div className="ct">❤️ Zonas de FC — 30 dias de treino</div>
+          {!ztot?<Empty ico="❤️" title="Sem dados de zonas" desc="As zonas dos seus treinos aparecem aqui"/>:(
+            <div>
+              <div style={{display:'flex',height:14,borderRadius:7,overflow:'hidden',marginBottom:10}}>
+                {zMeta.map((z,i)=>zsum[i]>0&&<div key={z.l} style={{width:(zsum[i]/ztot*100)+'%',background:z.c}}/>)}
+              </div>
+              <div style={{display:'flex',gap:12,flexWrap:'wrap',marginBottom:12}}>
+                {zMeta.map((z,i)=>(
+                  <div key={z.l} style={{display:'flex',alignItems:'center',gap:5,fontSize:10.5,color:'var(--t3)'}}>
+                    <div style={{width:8,height:8,borderRadius:2,background:z.c}}/>{z.l} {hmFromMs(zsum[i])} ({ztot?Math.round(zsum[i]/ztot*100):0}%)
+                  </div>
+                ))}
+              </div>
+              <div style={{padding:'10px 12px',background:'var(--s2)',borderRadius:10,fontSize:11.5,color:'var(--t2)',lineHeight:1.7}}>
+                <b style={{color:'var(--t)'}}>{hmFromMs(ztot)}</b> de treino no mês · <b style={{color:hardPct>40?'var(--red)':hardPct>=15?'var(--green)':'var(--amber)'}}>{hardPct}%</b> em zona alta (Z4–Z5). Z2 é a base aeróbica; Z4–Z5 é onde o condicionamento evolui.
+              </div>
+            </div>
+          )}
+        </div>
+        <div className="card">
           <div className="ct">🏆 Recordes pessoais (período carregado)</div>
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
             {[
@@ -1040,7 +1168,9 @@ function SaudePage({whoop,connect,habitLog,habitDefs}){
             ))}
           </div>
         </div>
-        <div className="card">
+      </div>
+
+      <div className="card" style={{marginBottom:14}}>
           <div className="ct">Treinos recentes</div>
           {workouts.length===0?<Empty ico="🏋️" title="Sem treinos" desc="Nenhum treino registrado no período"/>:(
             <div style={{maxHeight:300,overflowY:'auto'}}>
@@ -1053,14 +1183,13 @@ function SaudePage({whoop,connect,habitLog,habitDefs}){
                   </div>
                   <div style={{textAlign:'right'}}>
                     <div style={{fontSize:13,fontWeight:800,color:'var(--orange)'}}>{(Math.round(w.score.strain*10)/10).toFixed(1)}</div>
-                    <div style={{fontSize:10,color:'var(--t3)'}}>{kcal(w.score.kilojoule)} kcal · {Math.round(w.score.average_heart_rate)}bpm</div>
+                    <div style={{fontSize:10,color:'var(--t3)'}}>{kcal(w.score.kilojoule)} kcal · {Math.round(w.score.average_heart_rate)}/{Math.round(w.score.max_heart_rate)} bpm</div>
                     <ZoneBar z={w.score.zone_duration}/>
                   </div>
                 </div>
               ))}
             </div>
           )}
-        </div>
       </div>
     </div>
   );
@@ -1871,7 +2000,7 @@ function ChatSheet({open,onClose,ctxBuilder}){
   );
 }
 
-function SettingsModal({open,onClose,syncState,onActivate,onDeactivate,onSyncNow,habitLog,pushPrefs,setPushPrefs}){
+function SettingsModal({open,onClose,syncState,onActivate,onDeactivate,onSyncNow,habitLog,pushPrefs,setPushPrefs,history}){
   const[pin,setPin]=useState(getSyncKey()||'');
   const[pushMsg,setPushMsg]=useState('');
   return(
@@ -1922,13 +2051,14 @@ function SettingsModal({open,onClose,syncState,onActivate,onDeactivate,onSyncNow
         <div>
           <div className="ct" style={{marginBottom:6}}>Backup</div>
           <button className="btn ghost sm" onClick={()=>{
-            const data={habit_log:habitLog,habit_defs:DEFS.list,exported_at:new Date().toISOString()};
+            const data={habit_log:habitLog,habit_defs:DEFS.list,history:history||null,push_prefs:pushPrefs,exported_at:new Date().toISOString()};
             const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
             const a=document.createElement('a');
             a.href=URL.createObjectURL(blob);
             a.download='isaac-os-backup-'+todayKey()+'.json';
             a.click();
-          }}>⬇ Exportar hábitos (JSON)</button>
+          }}>⬇ Exportar backup completo (JSON)</button>
+          <div style={{fontSize:10.5,color:'var(--t3)',marginTop:6}}>Inclui hábitos, definições e a memória permanente (relatórios da Vida).</div>
         </div>
       </div>
     </Modal>
@@ -2033,13 +2163,26 @@ function App(){
     }
   }
 
-  async function fetchWhoop(token,quiet){
+  async function fetchWhoop(token,quiet,retried){
+    if(_wBusy)return;_wBusy=true;
     if(!quiet)setWhoop(s=>({...s,loading:true,error:null}));
     try{
       const stored=getTokens();
       const headers={'Authorization':'Bearer '+token};
       if(stored&&stored.refresh_token)headers['X-Refresh-Token']=stored.refresh_token;
       const r=await fetch('/whoop/data',{headers});
+      if(r.status===401&&!retried&&getSyncKey()){
+        // Sessão local morta — pode ser o cron da madrugada que rotacionou o token.
+        // Antes de acusar "reconecte", busca o token mais novo no servidor e tenta 1x.
+        try{
+          const remote=await syncFetch('GET');
+          const rw=remote&&remote.whoop_tokens;
+          if(rw&&rw.access_token&&(rw.saved_at||0)>((stored&&stored.saved_at)||0)){
+            saveTokens(rw);_wBusy=false;
+            return fetchWhoop(rw.access_token,quiet,true);
+          }
+        }catch(e){}
+      }
       if(!r.ok)throw new Error('HTTP '+r.status);
       const data=await r.json();
       if(data._new_tokens&&data._new_tokens.access_token){
@@ -2050,18 +2193,28 @@ function App(){
       setWhoop({loading:false,data,error:null,updatedAt:Date.now()});
     }catch(err){
       setWhoop(s=>({loading:false,data:s.data,error:err.message,updatedAt:s.updatedAt}));
-    }
+    }finally{_wBusy=false}
   }
 
-  async function fetchGoogle(token,quiet){
+  async function fetchGoogle(token,quiet,forceRefresh){
+    if(_gBusy)return;_gBusy=true;
     if(!quiet)setGoogle(s=>({...s,loading:true,error:null}));
     try{
       const stored=getGoogleTokens();
       const headers={'Authorization':'Bearer '+token};
-      if(stored&&stored.refresh_token)headers['X-Refresh-Token']=stored.refresh_token;
+      // Token Google dura 1h e o refresh NÃO rotaciona: só manda o refresh
+      // (que força renovação no backend) quando o token está velho — as outras
+      // chamadas ficam ~300ms mais rápidas.
+      const age=Date.now()-((stored&&stored.saved_at)||0);
+      if(stored&&stored.refresh_token&&(forceRefresh||age>45*60*1000))headers['X-Refresh-Token']=stored.refresh_token;
       const r=await fetch('/google/data',{headers});
       if(!r.ok)throw new Error('HTTP '+r.status);
       const data=await r.json();
+      // Token expirou antes da hora (revogação etc.): tenta 1x forçando renovação
+      if(!forceRefresh&&stored&&stored.refresh_token&&/"_error":401/.test(JSON.stringify(data))){
+        _gBusy=false;
+        return fetchGoogle(token,quiet,true);
+      }
       if(data._new_tokens&&data._new_tokens.access_token){
         const tk={...stored,access_token:data._new_tokens.access_token,saved_at:Date.now()};
         saveGoogleTokens(tk);syncPushSoon({google_tokens:tk});
@@ -2070,7 +2223,7 @@ function App(){
       setGoogle({loading:false,data,error:null,updatedAt:Date.now()});
     }catch(err){
       setGoogle(s=>({loading:false,data:s.data,error:err.message,updatedAt:s.updatedAt}));
-    }
+    }finally{_gBusy=false}
   }
 
   // Escrita no Google Tasks com atualização otimista (UI responde na hora)
@@ -2248,7 +2401,7 @@ function App(){
       {!aiOpen&&<div className="fab" title="IA do Isaac OS" onClick={()=>setAiOpen(true)}>✨</div>}
       <ChatSheet open={aiOpen} onClose={()=>setAiOpen(false)} ctxBuilder={()=>buildAIContext(whoop.data,google.data,habitLog,history)}/>
 
-      <SettingsModal open={settingsOpen} onClose={()=>setSettingsOpen(false)} syncState={syncState} habitLog={habitLog} pushPrefs={pushPrefs} setPushPrefs={setPushPrefs}
+      <SettingsModal open={settingsOpen} onClose={()=>setSettingsOpen(false)} syncState={syncState} habitLog={habitLog} pushPrefs={pushPrefs} setPushPrefs={setPushPrefs} history={history}
         onActivate={(pin)=>{saveSyncKey(pin);setSyncState({on:true,at:null,err:null});syncNow(true);}}
         onDeactivate={()=>{saveSyncKey(null);setSyncState({on:false,at:null,err:null});}}
         onSyncNow={()=>syncNow(true)}/>

@@ -154,7 +154,17 @@ export default async function handler(req, res) {
     else out.sent = 0;
   }
 
-  state._at = Date.now();
-  await kvSet(state);
+  // Regrava com MERGE FINO: o cron demora vários segundos entre o kvGet lá em
+  // cima e este ponto — se o app sincronizou nesse meio-tempo (hábito marcado,
+  // token rotacionado), salvar `state` inteiro reverteria essas mudanças.
+  // Então relê o estado fresco e aplica só o que o cron de fato produziu.
+  const fresh = await kvGet();
+  fresh.history = { ...(fresh.history || {}), ...(state.history || {}) };
+  if (state.whoop_tokens && (!fresh.whoop_tokens || (state.whoop_tokens.saved_at || 0) > (fresh.whoop_tokens.saved_at || 0))) {
+    fresh.whoop_tokens = state.whoop_tokens;
+  }
+  if (state.push_subs) fresh.push_subs = state.push_subs; // limpeza de inscrições mortas
+  fresh._at = Date.now();
+  await kvSet(fresh);
   return res.status(200).json(out);
 }

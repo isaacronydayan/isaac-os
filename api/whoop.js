@@ -93,18 +93,29 @@ async function handleData(req, res) {
   const refresh = req.headers['x-refresh-token'];
   if (!token) return res.status(401).json({ error: 'Missing token' });
 
-  // Renova o token primeiro — garante que a sessão nunca "morre" silenciosamente
+  // O refresh token do WHOOP é de USO ÚNICO (rotaciona a cada renovação).
+  // Antes renovávamos em TODA chamada: duas chamadas simultâneas (boot + sync,
+  // ou duas abas) mandavam o mesmo refresh token, a segunda falhava e a sessão
+  // era invalidada — daí o "conectado mas sem dados / precisa reconectar".
+  // Agora: testa o token atual primeiro e SÓ renova se ele expirou (401/403).
   let newTokens = null;
-  if (refresh) {
+  let probe = await getV('/v2/user/profile/basic', '/v1/user/profile/basic', token);
+  if (!probe.ok && (probe.status === 401 || probe.status === 403) && refresh) {
     const refreshed = await refreshToken(refresh);
     if (refreshed?.access_token) {
       token = refreshed.access_token;
       newTokens = refreshed;
+      probe = await getV('/v2/user/profile/basic', '/v1/user/profile/basic', token);
     }
   }
+  // Token morto e renovação falhou → 401 de verdade, pro app mostrar o banner
+  // "Sessão WHOOP expirada — reconecte" em vez de ficar vazio silenciosamente.
+  if (!probe.ok && (probe.status === 401 || probe.status === 403)) {
+    return res.status(401).json({ error: 'whoop_unauthorized', detail: probe.data });
+  }
 
-  const [profileRes, bodyRes, cycles, recovery, sleep, workouts] = await Promise.all([
-    getV('/v2/user/profile/basic', '/v1/user/profile/basic', token),
+  const profileRes = probe;
+  const [bodyRes, cycles, recovery, sleep, workouts] = await Promise.all([
     getV('/v2/user/measurement/body', '/v1/user/measurement/body', token),
     getCollection('/v2/cycle?limit=25', '/v1/cycle?limit=25', token, 2),
     getCollection('/v2/recovery?limit=25', '/v1/recovery?limit=25', token, 2),

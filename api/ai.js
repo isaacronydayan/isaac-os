@@ -87,7 +87,8 @@ export default async function handler(req, res) {
         headers: { 'Content-Type': 'application/json' },
         body: buildPayload(model),
       });
-      if (r.status === 429) return res.status(200).json({ error: 'rate_limit' });
+      // Limite gratuito é POR MODELO: estourou aqui, tenta o próximo da fila.
+      if (r.status === 429) { lastErr = { error: 'rate_limit', model: model }; continue; }
       const j = await r.json();
       if (!r.ok) {
         // Modelo aposentado pelo Google → tenta o próximo da fila.
