@@ -786,11 +786,11 @@ function HojePage({whoop,google,habitLog,toggleHabit,taskAction,setPage,connect,
         </div>
       </div>
 
-      {brief&&((brief.quotes&&brief.quotes.length>0)||(brief.news&&brief.news.length>0))&&(
+      {brief&&brief.quotes&&brief.quotes.length>0&&(
         <div className="card" style={{marginBottom:14}}>
           <div className="ct">🌎 Resumo do dia</div>
           {brief.quotes&&brief.quotes.length>0&&(
-            <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:brief.news&&brief.news.length?14:0}}>
+            <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
               {brief.quotes.map(q=>{
                 const up=q.chg>=0;
                 const price=q.fmt==='brl'?'R$ '+q.price.toLocaleString('pt-BR',{maximumFractionDigits:2}):q.fmt==='usd'?'US$ '+Math.round(q.price).toLocaleString('pt-BR'):Math.round(q.price).toLocaleString('pt-BR');
@@ -802,15 +802,6 @@ function HojePage({whoop,google,habitLog,toggleHabit,taskAction,setPage,connect,
                   </div>
                 );
               })}
-            </div>
-          )}
-          {brief.news&&brief.news.length>0&&(
-            <div>
-              {brief.news.map((n,i)=>(
-                <a key={i} href={n.link} target="_blank" rel="noreferrer" style={{display:'flex',gap:8,padding:'6px 2px',fontSize:12.5,color:'var(--t2)',textDecoration:'none',borderBottom:i<brief.news.length-1?'1px solid var(--b)':'none'}}>
-                  <span style={{color:'var(--t3)'}}>›</span>{n.t}
-                </a>
-              ))}
             </div>
           )}
         </div>
