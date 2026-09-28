@@ -401,13 +401,16 @@ function saveGemaraNote(dk,texto){
 }
 
 // ============================ EXPORTAR CSV ============================
+const NL=String.fromCharCode(10);
+const CRNL=String.fromCharCode(13,10);
+const BOM=String.fromCharCode(65279);
 function csvCell(v){
   const s=v===null||v===undefined?'':String(v);
-  return /[",\n;]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;
+  return (s.indexOf('"')>=0||s.indexOf(',')>=0||s.indexOf(';')>=0||s.indexOf(NL)>=0)?'"'+s.replace(/"/g,'""')+'"':s;
 }
 function downloadCSV(filename,rows){
-  const csv=rows.map(r=>r.map(csvCell).join(';')).join('\r\n');
-  const blob=new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8;'}); // BOM p/ acentos no Excel
+  const csv=rows.map(r=>r.map(csvCell).join(';')).join(CRNL);
+  const blob=new Blob([BOM+csv],{type:'text/csv;charset=utf-8;'}); // BOM p/ acentos no Excel
   const a=document.createElement('a');
   a.href=URL.createObjectURL(blob);
   a.download=filename;
@@ -2846,7 +2849,7 @@ function SettingsModal({open,onClose,syncState,onActivate,onDeactivate,onSyncNow
       <Modal open={manage} onClose={()=>setManage(false)} title="Gerenciar hábitos">
         {draft&&(
           <div>
-            <div style={{fontSize:11,color:'var(--t3)',marginBottom:12}}>Emoji · nome · pilar · reordenar · excluir. O histórico de dias marcados é preservado. Com o WHOOP conectado, "Dormir antes da 1h" e "Levantar até 7h30" passam a ser calculados automaticamente (não aparecem mais para marcação manual), e "Dormir 6h30+" é adicionado como um terceiro hábito automático na página de Sono.</div>
+            <div style={{fontSize:11,color:'var(--t3)',marginBottom:12}}>Emoji · nome · pilar · reordenar · excluir. O histórico de dias marcados é preservado. Com o WHOOP conectado, “Dormir antes da 1h” e “Levantar até 7h30” passam a ser calculados automaticamente (não aparecem mais para marcação manual), e “Dormir 6h30+” é adicionado como um terceiro hábito automático na página de Sono.</div>
             <div style={{display:'flex',flexDirection:'column',gap:6,maxHeight:'50vh',overflowY:'auto'}}>
               {draft.map((h,i)=>(
                 <div key={h.id} style={{display:'flex',gap:6,alignItems:'center'}}>

@@ -6,9 +6,5 @@
   },
   "engines": {
     "node": "24.x"
-  },
-  "dependencies": {
-    "@babel/core": "^8.0.6",
-    "@babel/preset-react": "^8.0.1"
   }
 }
