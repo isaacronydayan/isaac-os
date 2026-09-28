@@ -1,9 +1,9 @@
-// Build do Isaac OS: compila src/app.jsx (JSX → JS) e injeta em api/index.js.
+// Build do Isaac OS: compila app.jsx (JSX → JS) e injeta em api/index.js.
 // Uso: node build.cjs   (requer @babel/core e @babel/preset-react instalados)
 let babel;try{babel=require('@babel/core')}catch{babel=require('/tmp/node_modules/@babel/core')}
 const fs = require('fs');
 
-const jsx = fs.readFileSync('src/app.jsx', 'utf8');
+const jsx = fs.readFileSync('app.jsx', 'utf8');
 const out = babel.transformSync(jsx, {
   presets: [['@babel/preset-react', { runtime: 'classic', development: false }]],
   filename: 'app.jsx',
@@ -21,9 +21,9 @@ if (!re.test(idx)) {
   // já está compilado? substitui o bloco marcado
   const re2 = /<script>\/\*APP_COMPILADO[\s\S]*?<\/script>\n<\/body>/;
   if (!re2.test(idx)) throw new Error('bloco do app não encontrado em api/index.js');
-  idx = idx.replace(re2, '<script>/*APP_COMPILADO — gerado por build.cjs a partir de src/app.jsx — NÃO EDITAR À MÃO*/\n' + out + '\n</script>\n</body>');
+  idx = idx.replace(re2, '<script>/*APP_COMPILADO — gerado por build.cjs a partir de app.jsx — NÃO EDITAR À MÃO*/\n' + out + '\n</script>\n</body>');
 } else {
-  idx = idx.replace(re, '<script>/*APP_COMPILADO — gerado por build.cjs a partir de src/app.jsx — NÃO EDITAR À MÃO*/\n' + out + '\n</script>\n</body>');
+  idx = idx.replace(re, '<script>/*APP_COMPILADO — gerado por build.cjs a partir de app.jsx — NÃO EDITAR À MÃO*/\n' + out + '\n</script>\n</body>');
 }
 fs.writeFileSync('api/index.js', idx);
 console.log('✅ build ok — compilado:', out.length, 'bytes');
